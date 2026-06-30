@@ -1,0 +1,8 @@
+name = "meeting-assistant"
+compatibility_date = "2026-06-30"
+pages_build_output_dir = "dist"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "meeting-assistant-db"
+database_id = "77e9d8ed-5be8-48bc-9942-fddf464eae60"

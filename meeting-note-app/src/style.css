@@ -1,0 +1,102 @@
+/* 全局样式 */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --primary: #4f46e5;
+  --primary-light: #818cf8;
+  --primary-bg: #eef2ff;
+  --danger: #ef4444;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --text: #1e293b;
+  --text-secondary: #64748b;
+  --bg: #f8fafc;
+  --card-bg: #ffffff;
+  --border: #e2e8f0;
+  --radius: 12px;
+}
+
+html, body {
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#app {
+  height: 100%;
+}
+
+/* FullCalendar 自定义样式 */
+.fc {
+  --fc-border-color: var(--border);
+  --fc-button-bg-color: var(--primary);
+  --fc-button-border-color: var(--primary);
+  --fc-button-hover-bg-color: var(--primary-light);
+  --fc-button-hover-border-color: var(--primary-light);
+  --fc-button-active-bg-color: var(--primary);
+  --fc-button-active-border-color: var(--primary);
+  --fc-today-bg-color: var(--primary-bg);
+  font-family: inherit;
+}
+
+.fc .fc-toolbar-title {
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+.fc .fc-button {
+  font-size: 0.85rem;
+  padding: 0.35em 0.85em;
+  border-radius: 8px;
+}
+
+.fc .fc-daygrid-day-number {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.fc .fc-daygrid-day.fc-day-today {
+  background-color: var(--primary-bg);
+}
+
+.fc .fc-timegrid-slot {
+  height: 3em;
+}
+
+/* 会议标记点 */
+.meeting-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin: 0 1px;
+}
+
+.meeting-dot--general { background-color: #6366f1; }
+.meeting-dot--project { background-color: #f59e0b; }
+.meeting-dot--client { background-color: #10b981; }
+.meeting-dot--internal { background-color: #3b82f6; }
+.meeting-dot--brainstorm { background-color: #ec4899; }
+
+/* 移动端滚动优化 */
+.calendar-container {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* 过渡动画 */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
