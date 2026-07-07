@@ -37,4 +37,22 @@ class NemoRecognizer:
         return self._model
 
     def transcribe_wav(self, data: bytes) -> TranscriptionResult:
-        raise NotImplementedError("NemoRecognizer inference is implemented in Task 3.")
+        import tempfile
+        from pathlib import Path
+
+        model = self._load_model()
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+            tmp.write(data)
+            tmp_path = Path(tmp.name)
+
+        try:
+            outputs = model.transcribe([str(tmp_path)], batch_size=1)
+        finally:
+            tmp_path.unlink(missing_ok=True)
+
+        if isinstance(outputs, list) and outputs:
+            text = str(outputs[0])
+        else:
+            text = str(outputs)
+
+        return TranscriptionResult(text=text, language=DEFAULT_LANGUAGE)
