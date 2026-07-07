@@ -226,7 +226,7 @@ def test_transcribe_rejects_non_wav_upload():
 Run:
 
 ```powershell
-wsl -d Ubuntu-24.04 -- bash -lc "cd /mnt/e/Objects/MeetingRecord/.worktrees/asr-service/asr-service && ../.venv-asr/bin/pip install -r requirements.txt && ../.venv-asr/bin/pytest -q"
+wsl -d Ubuntu-24.04 -- bash -lc "cd /mnt/e/Objects/MeetingRecord/.worktrees/asr-service/asr-service && ../.venv-asr/bin/pip install -r requirements.txt && ../.venv-asr/bin/python -m pytest -q"
 ```
 
 Expected: tests fail because `app.audio`, `app.main`, and `app.model` do not exist.
@@ -380,7 +380,7 @@ app = create_app()
 Run:
 
 ```powershell
-wsl -d Ubuntu-24.04 -- bash -lc "cd /mnt/e/Objects/MeetingRecord/.worktrees/asr-service/asr-service && ../.venv-asr/bin/pytest -q"
+wsl -d Ubuntu-24.04 -- bash -lc "cd /mnt/e/Objects/MeetingRecord/.worktrees/asr-service/asr-service && ../.venv-asr/bin/python -m pytest -q"
 ```
 
 Expected: `5 passed`.
@@ -454,7 +454,7 @@ Replace `NemoRecognizer.transcribe_wav` in `asr-service/app/model.py`:
 Run:
 
 ```powershell
-wsl -d Ubuntu-24.04 -- bash -lc "cd /mnt/e/Objects/MeetingRecord/.worktrees/asr-service/asr-service && ../.venv-asr/bin/pytest -q"
+wsl -d Ubuntu-24.04 -- bash -lc "cd /mnt/e/Objects/MeetingRecord/.worktrees/asr-service/asr-service && ../.venv-asr/bin/python -m pytest -q"
 ```
 
 Expected: existing fake-recognizer tests still pass.
