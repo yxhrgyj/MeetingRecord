@@ -35,13 +35,13 @@
 
 ---
 
-### Task 1: WSL Python Environment
+### Task 1: WSL Python and CUDA Environment
 
 **Files:**
 - No repository files changed.
 
 **Interfaces:**
-- Produces: WSL Python environment with `python3.12`, `venv`, `ffmpeg`, and `libsndfile1`.
+- Produces: WSL Python environment with `python3.12`, `venv`, `ffmpeg`, `libsndfile1`, and PyTorch CUDA.
 
 - [ ] **Step 1: Install system packages**
 
@@ -72,6 +72,26 @@ wsl -d Ubuntu-24.04 -- bash -lc "cd /mnt/e/Objects/MeetingRecord/.worktrees/asr-
 ```
 
 Expected: Python reports `3.12.x`.
+
+- [ ] **Step 4: Install PyTorch CUDA**
+
+Run:
+
+```powershell
+wsl -d Ubuntu-24.04 -- bash -lc "cd /mnt/e/Objects/MeetingRecord/.worktrees/asr-service && . .venv-asr/bin/activate && pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128"
+```
+
+Expected: command exits `0`.
+
+- [ ] **Step 5: Verify PyTorch CUDA**
+
+Run:
+
+```powershell
+wsl -d Ubuntu-24.04 -- bash -lc "cd /mnt/e/Objects/MeetingRecord/.worktrees/asr-service && . .venv-asr/bin/activate && python -c 'import torch; print(torch.__version__); print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0))'"
+```
+
+Expected: `torch.cuda.is_available()` prints `True` and the GPU name contains `NVIDIA GeForce RTX 5060 Ti`.
 
 ---
 
@@ -396,7 +416,7 @@ Cython
 packaging
 ```
 
-Install NeMo separately because it is pulled from GitHub:
+Install NeMo separately because it is pulled from GitHub. PyTorch CUDA must already be installed from Task 1.
 
 ```powershell
 wsl -d Ubuntu-24.04 -- bash -lc "cd /mnt/e/Objects/MeetingRecord/.worktrees/asr-service && . .venv-asr/bin/activate && pip install Cython packaging && pip install 'git+https://github.com/NVIDIA/NeMo.git@main#egg=nemo_toolkit[asr]'"
