@@ -40,10 +40,16 @@ test('formatTranscriptForEditor formats timestamped segments', () => {
   const formatted = formatTranscriptForEditor({
     text: 'fallback',
     segments: [
-      { startSeconds: 0, endSeconds: 59.5, text: '第一段 <zh-CN>' },
-      { startSeconds: 59.5, endSeconds: 125.2, text: '第二段' },
+      { startSeconds: 0, endSeconds: 59.5, text: '涨上睡你中心预算五百一十万 <zh-CN>' },
+      { startSeconds: 59.5, endSeconds: 125.2, text: '你转成 PDF 先发给我' },
     ],
   })
 
-  assert.equal(formatted, '[00:00-00:59]\n第一段\n\n[00:59-02:05]\n第二段')
+  assert.match(formatted, /## 语音转写原文/)
+  assert.match(formatted, /\[00:00-00:59\]\n掌上信息中心预算五百一十万/)
+  assert.match(formatted, /## 会议纪要草稿/)
+  assert.match(formatted, /### 金额\/预算/)
+  assert.match(formatted, /五百一十万/)
+  assert.match(formatted, /### 待办事项/)
+  assert.match(formatted, /你转成 PDF 先发给我/)
 })

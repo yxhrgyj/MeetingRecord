@@ -152,7 +152,7 @@ async function handleAudioSelected(event) {
       return
     }
     const prefix = form.content.trim() ? '\n\n' : ''
-    replaceAtCursor(`${prefix}## 语音转写\n\n${transcript}`)
+    replaceAtCursor(`${prefix}${transcript}`)
     asrStatus.value = 'ASR 已插入'
     setTimeout(() => {
       if (asrStatus.value === 'ASR 已插入') asrStatus.value = ''
