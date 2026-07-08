@@ -4,7 +4,7 @@ import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { randomUUID } from 'crypto'
-import { summarizeWithOllama } from './server/ollamaSummarizer.js'
+import { buildSummarizerOptions, summarizeWithOllama } from './server/ollamaSummarizer.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -82,13 +82,9 @@ app.post('/api/summarize', async (req, res) => {
   }
 
   try {
-    const model = process.env.OLLAMA_MODEL || 'qwen3:8b'
-    const summary = await summarizeWithOllama(content, {
-      baseUrl: process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434',
-      model,
-      numGpu: process.env.OLLAMA_NUM_GPU ?? 0
-    })
-    res.json({ summary, model })
+    const summarizerOptions = buildSummarizerOptions(process.env)
+    const summary = await summarizeWithOllama(content, summarizerOptions)
+    res.json({ summary, model: summarizerOptions.model })
   } catch (error) {
     console.error('LLM 纪要整理失败:', error)
     res.status(503).json({

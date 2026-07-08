@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 
 import {
   buildMeetingSummaryPrompt,
+  buildSummarizerOptions,
   stripThinkingBlocks,
   summarizeWithOllama
 } from '../server/ollamaSummarizer.js'
@@ -10,6 +11,7 @@ import {
 test('buildMeetingSummaryPrompt asks for grounded meeting notes', () => {
   const prompt = buildMeetingSummaryPrompt('[00:00-00:20]\n讨论预算五百一十万。')
 
+  assert.match(prompt, /^\/no_think\n/)
   assert.match(prompt, /不要编造/)
   assert.match(prompt, /会议纪要草稿/)
   assert.match(prompt, /金额\/预算/)
@@ -49,6 +51,44 @@ test('summarizeWithOllama posts prompt to local Ollama generate API', async () =
   assert.equal(body.options.num_gpu, 0)
   assert.match(body.prompt, /讨论预算五百一十万/)
   assert.equal(summary, '## 会议纪要草稿\n\n### 关键结论\n- 继续推进')
+})
+
+test('summarizeWithOllama defaults to the smaller local Qwen model', async () => {
+  let requestBody
+  const fetchImpl = async (url, options) => {
+    requestBody = JSON.parse(options.body)
+    return new Response(JSON.stringify({
+      response: '## 会议纪要草稿\n\n### 关键结论\n- 继续推进'
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    })
+  }
+
+  await summarizeWithOllama('讨论预算五百一十万。', {
+    fetchImpl,
+    baseUrl: 'http://ollama.test'
+  })
+
+  assert.equal(requestBody.model, 'qwen3:4b')
+  assert.equal(Object.hasOwn(requestBody.options, 'num_gpu'), false)
+})
+
+test('buildSummarizerOptions uses local defaults and preserves env overrides', () => {
+  assert.deepEqual(buildSummarizerOptions({}), {
+    baseUrl: 'http://127.0.0.1:11434',
+    model: 'qwen3:4b'
+  })
+
+  assert.deepEqual(buildSummarizerOptions({
+    OLLAMA_BASE_URL: 'http://ollama.internal',
+    OLLAMA_MODEL: 'qwen3:8b',
+    OLLAMA_NUM_GPU: '35'
+  }), {
+    baseUrl: 'http://ollama.internal',
+    model: 'qwen3:8b',
+    numGpu: '35'
+  })
 })
 
 test('summarizeWithOllama surfaces Ollama errors', async () => {

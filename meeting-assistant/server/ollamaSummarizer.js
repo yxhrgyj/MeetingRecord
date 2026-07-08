@@ -1,9 +1,20 @@
 const DEFAULT_OLLAMA_BASE_URL = 'http://127.0.0.1:11434'
-const DEFAULT_OLLAMA_MODEL = 'qwen3:8b'
-const DEFAULT_OLLAMA_NUM_GPU = 0
+const DEFAULT_OLLAMA_MODEL = 'qwen3:4b'
+
+export function buildSummarizerOptions(env = {}) {
+  const options = {
+    baseUrl: env.OLLAMA_BASE_URL || DEFAULT_OLLAMA_BASE_URL,
+    model: env.OLLAMA_MODEL || DEFAULT_OLLAMA_MODEL
+  }
+  if (env.OLLAMA_NUM_GPU !== undefined) {
+    options.numGpu = env.OLLAMA_NUM_GPU
+  }
+  return options
+}
 
 export function buildMeetingSummaryPrompt(content) {
   return [
+    '/no_think',
     '你是严谨的中文会议纪要助手。请只根据下面的会议转写原文整理纪要，不要编造没有出现的信息。',
     '如果某一项在原文中没有明确提到，请写“未明确”。保留关键金额、日期、人员、系统名称和任务归属。',
     '输出 Markdown，结构固定为：',
@@ -53,7 +64,13 @@ export async function summarizeWithOllama(content, options = {}) {
   const baseUrl = (options.baseUrl || DEFAULT_OLLAMA_BASE_URL).replace(/\/$/, '')
   const model = options.model || DEFAULT_OLLAMA_MODEL
   const requestedNumGpu = Number(options.numGpu)
-  const numGpu = Number.isFinite(requestedNumGpu) ? requestedNumGpu : DEFAULT_OLLAMA_NUM_GPU
+  const ollamaOptions = {
+    temperature: 0.2,
+    top_p: 0.8
+  }
+  if (Number.isFinite(requestedNumGpu)) {
+    ollamaOptions.num_gpu = requestedNumGpu
+  }
   const response = await fetchImpl(`${baseUrl}/api/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -61,11 +78,7 @@ export async function summarizeWithOllama(content, options = {}) {
       model,
       prompt: buildMeetingSummaryPrompt(normalizedContent),
       stream: false,
-      options: {
-        temperature: 0.2,
-        top_p: 0.8,
-        num_gpu: numGpu
-      }
+      options: ollamaOptions
     })
   })
 
