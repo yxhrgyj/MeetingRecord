@@ -1,4 +1,5 @@
 from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.audio import AudioValidationError, convert_mp3_to_wav_bytes, validate_wav_bytes
 from app.config import MAX_UPLOAD_BYTES
@@ -6,6 +7,10 @@ from app.model import NemoRecognizer, Recognizer
 
 WAV_UPLOAD_TYPES = {"audio/wav", "audio/x-wav", "audio/wave"}
 MP3_UPLOAD_TYPES = {"audio/mpeg", "audio/mp3"}
+LOCAL_FRONTEND_ORIGINS = {
+    "http://127.0.0.1:5173",
+    "http://localhost:5173",
+}
 
 
 def _upload_kind(file: UploadFile) -> str | None:
@@ -19,7 +24,24 @@ def _upload_kind(file: UploadFile) -> str | None:
 
 def create_app(recognizer: Recognizer | None = None) -> FastAPI:
     app = FastAPI(title="MeetingRecord Local ASR Service")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=sorted(LOCAL_FRONTEND_ORIGINS),
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["*"],
+    )
     active_recognizer = recognizer or NemoRecognizer()
+
+    @app.get("/")
+    def root():
+        return {
+            "service": "MeetingRecord Local ASR Service",
+            "endpoints": {
+                "/health": "GET service and model status",
+                "/transcribe": "POST WAV or MP3 file upload",
+                "/docs": "OpenAPI documentation",
+            },
+        }
 
     @app.get("/health")
     def health():

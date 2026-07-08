@@ -38,6 +38,28 @@ def test_health_reports_model_status():
     assert response.json() == {"ok": True, "device": "test", "modelLoaded": True}
 
 
+def test_root_reports_available_endpoints():
+    client = TestClient(main_module.create_app(FakeRecognizer()))
+    response = client.get("/")
+    assert response.status_code == 200
+    assert response.json()["service"] == "MeetingRecord Local ASR Service"
+    assert "/health" in response.json()["endpoints"]
+    assert "/transcribe" in response.json()["endpoints"]
+
+
+def test_cors_allows_local_meeting_assistant():
+    client = TestClient(main_module.create_app(FakeRecognizer()))
+    response = client.options(
+        "/transcribe",
+        headers={
+            "Origin": "http://127.0.0.1:5173",
+            "Access-Control-Request-Method": "POST",
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://127.0.0.1:5173"
+
+
 def test_transcribe_returns_text_for_wav_upload():
     client = TestClient(main_module.create_app(FakeRecognizer()))
     response = client.post(

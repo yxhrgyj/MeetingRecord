@@ -166,7 +166,7 @@ async function handleAudioSelected(event) {
     }, 3000)
   } catch (error) {
     console.error('ASR 转写失败:', error)
-    asrStatus.value = 'ASR 服务不可用'
+    asrStatus.value = error?.message || 'ASR 服务不可用'
   } finally {
     isTranscribing.value = false
   }
