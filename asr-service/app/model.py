@@ -46,12 +46,19 @@ class NemoRecognizer:
             tmp_path = Path(tmp.name)
 
         try:
-            outputs = model.transcribe([str(tmp_path)], batch_size=1)
+            config = model.get_transcribe_config()
+            config.batch_size = 1
+            config.num_workers = 0
+            config.target_lang = DEFAULT_LANGUAGE
+            config.use_lhotse = False
+            config.verbose = False
+            outputs = model.transcribe([str(tmp_path)], override_config=config)
         finally:
             tmp_path.unlink(missing_ok=True)
 
         if isinstance(outputs, list) and outputs:
-            text = str(outputs[0])
+            first_output = outputs[0]
+            text = str(getattr(first_output, "text", first_output))
         else:
             text = str(outputs)
 

@@ -10,13 +10,14 @@ python3.12 -m venv ../.venv-asr
 pip install -U pip wheel setuptools
 pip install -r requirements.txt
 pip install -i https://pypi.tuna.tsinghua.edu.cn/simple "nemo_toolkit[asr]==2.7.3"
+pip install --no-deps --force-reinstall "git+https://github.com/NVIDIA-NeMo/Speech.git@main"
 ```
 
 ## Run
 
 ```bash
 . ../.venv-asr/bin/activate
-uvicorn app.main:app --host 127.0.0.1 --port 8000
+HF_ENDPOINT=https://hf-mirror.com uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
 ## Smoke Test
