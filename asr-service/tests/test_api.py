@@ -14,9 +14,11 @@ class FakeRecognizer:
 
     def __init__(self) -> None:
         self.last_data: bytes | None = None
+        self.calls = 0
 
     def transcribe_wav(self, data: bytes) -> TranscriptionResult:
         self.last_data = data
+        self.calls += 1
         return TranscriptionResult(text="test transcript", language="zh-CN")
 
 
@@ -70,6 +72,27 @@ def test_transcribe_returns_text_for_wav_upload():
     assert response.json()["text"] == "test transcript"
     assert response.json()["language"] == "zh-CN"
     assert response.json()["durationSeconds"] > 0
+    assert response.json()["segments"][0]["text"] == "test transcript"
+
+
+def test_transcribe_returns_timestamped_segments_for_long_upload(monkeypatch):
+    recognizer = FakeRecognizer()
+    monkeypatch.setattr(main_module, "TRANSCRIBE_CHUNK_SECONDS", 1.0)
+    monkeypatch.setattr(main_module, "TRANSCRIBE_OVERLAP_SECONDS", 0.2)
+    client = TestClient(main_module.create_app(recognizer))
+
+    response = client.post(
+        "/transcribe",
+        files={"file": ("sample.wav", make_wav(seconds=2.2), "audio/wav")},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert recognizer.calls == 3
+    assert len(body["segments"]) == 3
+    assert body["segments"][0]["startSeconds"] == 0
+    assert 0.79 <= body["segments"][1]["startSeconds"] <= 0.81
+    assert body["text"] == "test transcript\n\ntest transcript\n\ntest transcript"
 
 
 def test_transcribe_converts_mp3_upload(monkeypatch):

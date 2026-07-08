@@ -1,12 +1,14 @@
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.audio import AudioValidationError, convert_mp3_to_wav_bytes, validate_wav_bytes
+from app.audio import AudioValidationError, convert_mp3_to_wav_bytes, split_wav_bytes, validate_wav_bytes
 from app.config import MAX_UPLOAD_BYTES
 from app.model import NemoRecognizer, Recognizer
 
 WAV_UPLOAD_TYPES = {"audio/wav", "audio/x-wav", "audio/wave"}
 MP3_UPLOAD_TYPES = {"audio/mpeg", "audio/mp3"}
+TRANSCRIBE_CHUNK_SECONDS = 60.0
+TRANSCRIBE_OVERLAP_SECONDS = 1.0
 LOCAL_FRONTEND_ORIGINS = {
     "http://127.0.0.1:5173",
     "http://localhost:5173",
@@ -20,6 +22,10 @@ def _upload_kind(file: UploadFile) -> str | None:
     if file.content_type in MP3_UPLOAD_TYPES or filename.endswith(".mp3"):
         return "mp3"
     return None
+
+
+def _clean_transcript_text(text: str) -> str:
+    return " ".join(str(text or "").replace("<zh-CN>", " ").split())
 
 
 def create_app(recognizer: Recognizer | None = None) -> FastAPI:
@@ -70,11 +76,27 @@ def create_app(recognizer: Recognizer | None = None) -> FastAPI:
         except AudioValidationError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-        result = active_recognizer.transcribe_wav(wav_data)
+        chunks = split_wav_bytes(
+            wav_data,
+            chunk_seconds=TRANSCRIBE_CHUNK_SECONDS,
+            overlap_seconds=TRANSCRIBE_OVERLAP_SECONDS,
+        )
+        segments = []
+        for chunk in chunks:
+            result = active_recognizer.transcribe_wav(chunk.data)
+            segments.append(
+                {
+                    "startSeconds": round(chunk.start_seconds, 3),
+                    "endSeconds": round(chunk.end_seconds, 3),
+                    "text": _clean_transcript_text(result.text),
+                }
+            )
+
         return {
-            "text": result.text,
-            "language": result.language,
+            "text": "\n\n".join(segment["text"] for segment in segments if segment["text"]),
+            "language": "zh-CN",
             "durationSeconds": info.duration_seconds,
+            "segments": segments,
         }
 
     return app

@@ -17,6 +17,13 @@ class AudioInfo:
     duration_seconds: float
 
 
+@dataclass(frozen=True)
+class AudioChunk:
+    start_seconds: float
+    end_seconds: float
+    data: bytes
+
+
 def validate_wav_bytes(data: bytes) -> AudioInfo:
     try:
         with wave.open(io.BytesIO(data), "rb") as wav:
@@ -60,3 +67,48 @@ def convert_mp3_to_wav_bytes(data: bytes) -> bytes:
             raise AudioValidationError("Upload must be a valid MP3 file.") from exc
 
         return output_path.read_bytes()
+
+
+def split_wav_bytes(data: bytes, chunk_seconds: float, overlap_seconds: float) -> list[AudioChunk]:
+    if chunk_seconds <= 0:
+        raise ValueError("chunk_seconds must be positive.")
+    if overlap_seconds < 0 or overlap_seconds >= chunk_seconds:
+        raise ValueError("overlap_seconds must be greater than or equal to 0 and smaller than chunk_seconds.")
+
+    try:
+        with wave.open(io.BytesIO(data), "rb") as source:
+            channels = source.getnchannels()
+            sample_width = source.getsampwidth()
+            sample_rate = source.getframerate()
+            total_frames = source.getnframes()
+            frames = source.readframes(total_frames)
+    except wave.Error as exc:
+        raise AudioValidationError("Upload must be a valid WAV file.") from exc
+
+    chunk_frames = max(1, int(chunk_seconds * sample_rate))
+    overlap_frames = int(overlap_seconds * sample_rate)
+    step_frames = max(1, chunk_frames - overlap_frames)
+    chunks: list[AudioChunk] = []
+
+    for start_frame in range(0, total_frames, step_frames):
+        end_frame = min(start_frame + chunk_frames, total_frames)
+        start_byte = start_frame * channels * sample_width
+        end_byte = end_frame * channels * sample_width
+        buffer = io.BytesIO()
+        with wave.open(buffer, "wb") as chunk:
+            chunk.setnchannels(channels)
+            chunk.setsampwidth(sample_width)
+            chunk.setframerate(sample_rate)
+            chunk.writeframes(frames[start_byte:end_byte])
+
+        chunks.append(
+            AudioChunk(
+                start_seconds=start_frame / sample_rate if sample_rate else 0,
+                end_seconds=end_frame / sample_rate if sample_rate else 0,
+                data=buffer.getvalue(),
+            )
+        )
+        if end_frame >= total_frames:
+            break
+
+    return chunks

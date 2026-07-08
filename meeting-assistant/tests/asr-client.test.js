@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { useAsr } from '../src/composables/useAsr.js'
+import { formatTranscriptForEditor, useAsr } from '../src/composables/useAsr.js'
 
 test('transcribeAudio posts audio file to local ASR service', async () => {
   const calls = []
@@ -34,4 +34,16 @@ test('transcribeAudio surfaces ASR error detail', async () => {
     () => transcribeAudio(new File(['bad'], 'bad.txt', { type: 'text/plain' })),
     /Only WAV and MP3 uploads are supported/
   )
+})
+
+test('formatTranscriptForEditor formats timestamped segments', () => {
+  const formatted = formatTranscriptForEditor({
+    text: 'fallback',
+    segments: [
+      { startSeconds: 0, endSeconds: 59.5, text: '第一段 <zh-CN>' },
+      { startSeconds: 59.5, endSeconds: 125.2, text: '第二段' },
+    ],
+  })
+
+  assert.equal(formatted, '[00:00-00:59]\n第一段\n\n[00:59-02:05]\n第二段')
 })

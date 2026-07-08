@@ -1,7 +1,7 @@
 <script setup>
 import { reactive, ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { useApi } from '@/composables/useApi.js'
-import { useAsr } from '@/composables/useAsr.js'
+import { formatTranscriptForEditor, useAsr } from '@/composables/useAsr.js'
 import { useDateUtils } from '@/composables/useDateUtils.js'
 
 const props = defineProps({ initialData: Object })
@@ -133,13 +133,6 @@ function insertTemplate() {
 }
 
 // ===== ASR 音频转写 =====
-function normalizeTranscript(text) {
-  return String(text || '')
-    .replace(/\s*<zh-CN>\s*/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
-}
-
 function chooseAudioFile() {
   if (!isTranscribing.value) audioInputRef.value?.click()
 }
@@ -153,7 +146,7 @@ async function handleAudioSelected(event) {
   asrStatus.value = 'ASR 转写中...'
   try {
     const result = await asr.transcribeAudio(file)
-    const transcript = normalizeTranscript(result.text)
+    const transcript = formatTranscriptForEditor(result)
     if (!transcript) {
       asrStatus.value = 'ASR 未识别到文本'
       return
