@@ -4,6 +4,7 @@ import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { randomUUID } from 'crypto'
+import { summarizeWithOllama } from './server/ollamaSummarizer.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -73,6 +74,28 @@ function meetingToMarkdown(m) {
 }
 
 // ===== API 路由 =====
+
+app.post('/api/summarize', async (req, res) => {
+  const content = String(req.body?.content || '').trim()
+  if (!content) {
+    return res.status(400).json({ message: '没有可整理的转写内容' })
+  }
+
+  try {
+    const model = process.env.OLLAMA_MODEL || 'qwen3:8b'
+    const summary = await summarizeWithOllama(content, {
+      baseUrl: process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434',
+      model,
+      numGpu: process.env.OLLAMA_NUM_GPU ?? 0
+    })
+    res.json({ summary, model })
+  } catch (error) {
+    console.error('LLM 纪要整理失败:', error)
+    res.status(503).json({
+      message: error?.message || 'LLM 服务不可用，请确认 Ollama 已启动并已拉取模型'
+    })
+  }
+})
 
 // 获取指定月份的会议列表
 app.get('/api/meetings', (req, res) => {

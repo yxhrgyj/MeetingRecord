@@ -2,6 +2,7 @@
 import { reactive, ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { useApi } from '@/composables/useApi.js'
 import { formatTranscriptForEditor, useAsr } from '@/composables/useAsr.js'
+import { mergeSummaryIntoContent, useSummarizer } from '@/composables/useSummarizer.js'
 import { useDateUtils } from '@/composables/useDateUtils.js'
 
 const props = defineProps({ initialData: Object })
@@ -10,6 +11,7 @@ const emit = defineEmits(['save', 'close'])
 const dt = useDateUtils()
 const api = useApi()
 const asr = useAsr()
+const summarizer = useSummarizer()
 
 const form = reactive({
   id: '',
@@ -25,7 +27,9 @@ const attendeeInput = ref('')
 const contentRef = ref(null)
 const audioInputRef = ref(null)
 const isTranscribing = ref(false)
+const isSummarizing = ref(false)
 const asrStatus = ref('')
+const summaryStatus = ref('')
 const autoSaveTimer = ref(null)
 const autoSaveLabel = ref('')
 
@@ -162,6 +166,39 @@ async function handleAudioSelected(event) {
     asrStatus.value = error?.message || 'ASR 服务不可用'
   } finally {
     isTranscribing.value = false
+  }
+}
+
+// ===== LLM 会议纪要整理 =====
+async function handleSummarize() {
+  if (isSummarizing.value) return
+  if (!form.content.trim()) {
+    summaryStatus.value = '没有可整理的内容'
+    setTimeout(() => {
+      if (summaryStatus.value === '没有可整理的内容') summaryStatus.value = ''
+    }, 3000)
+    return
+  }
+
+  isSummarizing.value = true
+  summaryStatus.value = '纪要整理中...'
+  try {
+    const result = await summarizer.summarizeContent(form.content)
+    form.content = mergeSummaryIntoContent(form.content, result.summary)
+    summaryStatus.value = '纪要已生成'
+    nextTick(() => {
+      contentRef.value?.focus()
+      const end = form.content.length
+      contentRef.value?.setSelectionRange(end, end)
+    })
+    setTimeout(() => {
+      if (summaryStatus.value === '纪要已生成') summaryStatus.value = ''
+    }, 3000)
+  } catch (error) {
+    console.error('LLM 纪要整理失败:', error)
+    summaryStatus.value = error?.message || 'LLM 服务不可用'
+  } finally {
+    isSummarizing.value = false
   }
 }
 
@@ -514,6 +551,18 @@ onUnmounted(() => {
       {{ isTranscribing ? 'ASR...' : 'ASR' }}
     </button>
     <span v-if="asrStatus" class="text-[10px] text-slate-400">{{ asrStatus }}</span>
+    <div class="w-px h-4 bg-slate-200 mx-1"></div>
+    <button
+      @click="handleSummarize"
+      :disabled="isSummarizing || !form.content.trim()"
+      class="btn-ghost text-xs px-2 py-1 font-medium"
+      :class="isSummarizing || !form.content.trim() ? 'opacity-50 cursor-not-allowed' : 'text-primary-500'"
+      title="整理会议纪要"
+    >
+      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m5-11v14a2 2 0 01-2 2H6a2 2 0 01-2-2V5a2 2 0 012-2h8l5 5z"/></svg>
+      {{ isSummarizing ? '整理中...' : '整理纪要' }}
+    </button>
+    <span v-if="summaryStatus" class="text-[10px] text-slate-400">{{ summaryStatus }}</span>
     <div class="ml-auto flex items-center gap-3 text-[10px] text-slate-300">
       <span>每分钟自动保存</span>
       <span>Enter 续号 · Shift+Enter 换行 · Ctrl+S 保存</span>
