@@ -40,57 +40,6 @@ function segmentLabel(segment) {
   return `[${formatTimestamp(segment.startSeconds)}-${formatTimestamp(segment.endSeconds)}]`
 }
 
-function compactLine(text, maxLength = 90) {
-  const line = cleanTranscriptText(text).replace(/\s+/g, ' ').trim()
-  if (line.length <= maxLength) return line
-  return `${line.slice(0, maxLength)}...`
-}
-
-function unique(items) {
-  return [...new Set(items.filter(Boolean))]
-}
-
-function extractMoneyItems(text) {
-  const matches = cleanTranscriptText(text).match(/[一二三四五六七八九十百千万零两\d]+(?:点[一二三四五六七八九十\d]+)?万/g) || []
-  return unique(matches)
-}
-
-function extractActionItems(segments) {
-  return segments
-    .map((segment) => {
-      const text = compactLine(segment.text, 110)
-      if (!/(发给我|转成|确认|需要|负责|待办|调完|调整)/.test(text)) return ''
-      return `${segmentLabel(segment)} ${text}`
-    })
-    .filter(Boolean)
-}
-
-function buildMeetingDraft(segments, fallbackText) {
-  const sourceText = segments.map((segment) => segment.text).join('\n') || fallbackText || ''
-  const discussionItems = segments
-    .map((segment) => {
-      const text = compactLine(segment.text)
-      return text ? `- ${segmentLabel(segment)} ${text}` : ''
-    })
-    .filter(Boolean)
-    .slice(0, 12)
-  const moneyItems = extractMoneyItems(sourceText).map((item) => `- ${item}`)
-  const actionItems = extractActionItems(segments).map((item) => `- [ ] ${item}`)
-
-  return [
-    '## 会议纪要草稿',
-    '',
-    '### 讨论事项',
-    discussionItems.length ? discussionItems.join('\n') : '- 待补充',
-    '',
-    '### 金额/预算',
-    moneyItems.length ? moneyItems.join('\n') : '- 待补充',
-    '',
-    '### 待办事项',
-    actionItems.length ? actionItems.join('\n') : '- [ ] 待补充',
-  ].join('\n')
-}
-
 export function formatTranscriptForEditor(result) {
   const segments = Array.isArray(result?.segments) ? result.segments : []
   const normalizedSegments = segments
@@ -106,14 +55,12 @@ export function formatTranscriptForEditor(result) {
       '## 语音转写原文',
       '',
       formattedSegments.join('\n\n'),
-      '',
-      buildMeetingDraft(normalizedSegments, result?.text),
     ].join('\n')
   }
 
   const text = cleanTranscriptText(result?.text)
   if (!text) return ''
-  return ['## 语音转写原文', '', text, '', buildMeetingDraft([], text)].join('\n')
+  return ['## 语音转写原文', '', text].join('\n')
 }
 
 export function useAsr(options = {}) {

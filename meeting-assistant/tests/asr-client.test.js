@@ -36,7 +36,7 @@ test('transcribeAudio surfaces ASR error detail', async () => {
   )
 })
 
-test('formatTranscriptForEditor formats timestamped segments', () => {
+test('formatTranscriptForEditor formats cleaned timestamped segments', () => {
   const formatted = formatTranscriptForEditor({
     text: 'fallback',
     segments: [
@@ -47,9 +47,6 @@ test('formatTranscriptForEditor formats timestamped segments', () => {
 
   assert.match(formatted, /## 语音转写原文/)
   assert.match(formatted, /\[00:00-00:59\]\n掌上信息中心预算五百一十万/)
-  assert.match(formatted, /## 会议纪要草稿/)
-  assert.match(formatted, /### 金额\/预算/)
-  assert.match(formatted, /五百一十万/)
-  assert.match(formatted, /### 待办事项/)
-  assert.match(formatted, /你转成 PDF 先发给我/)
+  assert.match(formatted, /\[00:59-02:05\]\n你转成 PDF 先发给我/)
+  assert.doesNotMatch(formatted, /## 会议纪要草稿/)
 })
