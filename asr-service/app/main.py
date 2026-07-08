@@ -1,8 +1,20 @@
 from fastapi import FastAPI, File, HTTPException, UploadFile
 
-from app.audio import AudioValidationError, validate_wav_bytes
+from app.audio import AudioValidationError, convert_mp3_to_wav_bytes, validate_wav_bytes
 from app.config import MAX_UPLOAD_BYTES
 from app.model import NemoRecognizer, Recognizer
+
+WAV_UPLOAD_TYPES = {"audio/wav", "audio/x-wav", "audio/wave"}
+MP3_UPLOAD_TYPES = {"audio/mpeg", "audio/mp3"}
+
+
+def _upload_kind(file: UploadFile) -> str | None:
+    filename = file.filename.lower() if file.filename else ""
+    if file.content_type in WAV_UPLOAD_TYPES or filename.endswith(".wav"):
+        return "wav"
+    if file.content_type in MP3_UPLOAD_TYPES or filename.endswith(".mp3"):
+        return "mp3"
+    return None
 
 
 def create_app(recognizer: Recognizer | None = None) -> FastAPI:
@@ -19,10 +31,11 @@ def create_app(recognizer: Recognizer | None = None) -> FastAPI:
 
     @app.post("/transcribe")
     async def transcribe(file: UploadFile = File(...)):
-        if file.content_type not in {"audio/wav", "audio/x-wav", "audio/wave"}:
+        upload_kind = _upload_kind(file)
+        if upload_kind is None:
             raise HTTPException(
                 status_code=415,
-                detail="Only WAV uploads are supported in the first cut.",
+                detail="Only WAV and MP3 uploads are supported.",
             )
 
         data = await file.read()
@@ -30,11 +43,12 @@ def create_app(recognizer: Recognizer | None = None) -> FastAPI:
             raise HTTPException(status_code=413, detail="Uploaded audio is too large.")
 
         try:
-            info = validate_wav_bytes(data)
+            wav_data = convert_mp3_to_wav_bytes(data) if upload_kind == "mp3" else data
+            info = validate_wav_bytes(wav_data)
         except AudioValidationError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-        result = active_recognizer.transcribe_wav(data)
+        result = active_recognizer.transcribe_wav(wav_data)
         return {
             "text": result.text,
             "language": result.language,

@@ -2,6 +2,11 @@
 
 Local FastAPI service for NVIDIA Nemotron 3.5 ASR Streaming 0.6B.
 
+Supported upload formats:
+
+- WAV
+- MP3, converted to 16 kHz mono WAV with `ffmpeg` before transcription
+
 ## Setup
 
 ```bash
@@ -25,6 +30,7 @@ HF_ENDPOINT=https://hf-mirror.com uvicorn app.main:app --host 127.0.0.1 --port 8
 ```bash
 curl http://127.0.0.1:8000/health
 curl -F "file=@sample.wav;type=audio/wav" http://127.0.0.1:8000/transcribe
+curl -F "file=@sample.mp3;type=audio/mpeg" http://127.0.0.1:8000/transcribe
 ```
 
 The first transcription downloads model weights and can take several minutes.
