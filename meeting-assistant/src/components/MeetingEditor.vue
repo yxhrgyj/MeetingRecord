@@ -1,6 +1,7 @@
 <script setup>
 import { reactive, ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { useApi } from '@/composables/useApi.js'
+import { useAsr } from '@/composables/useAsr.js'
 import { useDateUtils } from '@/composables/useDateUtils.js'
 
 const props = defineProps({ initialData: Object })
@@ -8,6 +9,7 @@ const emit = defineEmits(['save', 'close'])
 
 const dt = useDateUtils()
 const api = useApi()
+const asr = useAsr()
 
 const form = reactive({
   id: '',
@@ -21,6 +23,9 @@ const form = reactive({
 
 const attendeeInput = ref('')
 const contentRef = ref(null)
+const audioInputRef = ref(null)
+const isTranscribing = ref(false)
+const asrStatus = ref('')
 const autoSaveTimer = ref(null)
 const autoSaveLabel = ref('')
 
@@ -78,6 +83,19 @@ function insertAtCursor(before, after = '') {
   })
 }
 
+function replaceAtCursor(text) {
+  const el = contentRef.value
+  if (!el) return
+  const start = el.selectionStart
+  const end = el.selectionEnd
+  form.content = form.content.substring(0, start) + text + form.content.substring(end)
+  nextTick(() => {
+    el.focus()
+    const pos = start + text.length
+    el.setSelectionRange(pos, pos)
+  })
+}
+
 function insertHeading()    { insertAtCursor('\n## ') }
 function insertSubheading() { insertAtCursor('\n### ') }
 function insertBold()       { insertAtCursor('**', '**') }
@@ -112,6 +130,46 @@ function insertTemplate() {
 
 `
   insertAtCursor(tpl)
+}
+
+// ===== ASR 音频转写 =====
+function normalizeTranscript(text) {
+  return String(text || '')
+    .replace(/\s*<zh-CN>\s*/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+function chooseAudioFile() {
+  if (!isTranscribing.value) audioInputRef.value?.click()
+}
+
+async function handleAudioSelected(event) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file) return
+
+  isTranscribing.value = true
+  asrStatus.value = 'ASR 转写中...'
+  try {
+    const result = await asr.transcribeAudio(file)
+    const transcript = normalizeTranscript(result.text)
+    if (!transcript) {
+      asrStatus.value = 'ASR 未识别到文本'
+      return
+    }
+    const prefix = form.content.trim() ? '\n\n' : ''
+    replaceAtCursor(`${prefix}## 语音转写\n\n${transcript}`)
+    asrStatus.value = 'ASR 已插入'
+    setTimeout(() => {
+      if (asrStatus.value === 'ASR 已插入') asrStatus.value = ''
+    }, 3000)
+  } catch (error) {
+    console.error('ASR 转写失败:', error)
+    asrStatus.value = 'ASR 服务不可用'
+  } finally {
+    isTranscribing.value = false
+  }
 }
 
 // ===== 自动保存（每分钟） =====
@@ -444,6 +502,25 @@ onUnmounted(() => {
       <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
       会议模板
     </button>
+    <input
+      ref="audioInputRef"
+      type="file"
+      accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,.mp3,.wav"
+      class="hidden"
+      @change="handleAudioSelected"
+    />
+    <div class="w-px h-4 bg-slate-200 mx-1"></div>
+    <button
+      @click="chooseAudioFile"
+      :disabled="isTranscribing"
+      class="btn-ghost text-xs px-2 py-1 font-medium"
+      :class="isTranscribing ? 'opacity-50 cursor-not-allowed' : 'text-primary-500'"
+      title="上传音频转写"
+    >
+      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 16V4m0 0l-4 4m4-4l4 4M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+      {{ isTranscribing ? 'ASR...' : 'ASR' }}
+    </button>
+    <span v-if="asrStatus" class="text-[10px] text-slate-400">{{ asrStatus }}</span>
     <div class="ml-auto flex items-center gap-3 text-[10px] text-slate-300">
       <span>每分钟自动保存</span>
       <span>Enter 续号 · Shift+Enter 换行 · Ctrl+S 保存</span>
