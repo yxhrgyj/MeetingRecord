@@ -48,6 +48,7 @@ test('summarizeWithOllama posts prompt to local Ollama generate API', async () =
   const body = JSON.parse(calls[0].options.body)
   assert.equal(body.model, 'qwen3:8b')
   assert.equal(body.stream, false)
+  assert.equal(body.keep_alive, '0s')
   assert.equal(body.options.num_gpu, 0)
   assert.match(body.prompt, /讨论预算五百一十万/)
   assert.equal(summary, '## 会议纪要草稿\n\n### 关键结论\n- 继续推进')
@@ -71,23 +72,27 @@ test('summarizeWithOllama defaults to the smaller local Qwen model', async () =>
   })
 
   assert.equal(requestBody.model, 'qwen3:4b')
+  assert.equal(requestBody.keep_alive, '0s')
   assert.equal(Object.hasOwn(requestBody.options, 'num_gpu'), false)
 })
 
 test('buildSummarizerOptions uses local defaults and preserves env overrides', () => {
   assert.deepEqual(buildSummarizerOptions({}), {
     baseUrl: 'http://127.0.0.1:11434',
-    model: 'qwen3:4b'
+    model: 'qwen3:4b',
+    keepAlive: '0s'
   })
 
   assert.deepEqual(buildSummarizerOptions({
     OLLAMA_BASE_URL: 'http://ollama.internal',
     OLLAMA_MODEL: 'qwen3:8b',
-    OLLAMA_NUM_GPU: '35'
+    OLLAMA_NUM_GPU: '35',
+    OLLAMA_KEEP_ALIVE: '2m'
   }), {
     baseUrl: 'http://ollama.internal',
     model: 'qwen3:8b',
-    numGpu: '35'
+    numGpu: '35',
+    keepAlive: '2m'
   })
 })
 

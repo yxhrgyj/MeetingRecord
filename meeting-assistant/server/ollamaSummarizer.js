@@ -1,10 +1,12 @@
 const DEFAULT_OLLAMA_BASE_URL = 'http://127.0.0.1:11434'
 const DEFAULT_OLLAMA_MODEL = 'qwen3:4b'
+const DEFAULT_OLLAMA_KEEP_ALIVE = '0s'
 
 export function buildSummarizerOptions(env = {}) {
   const options = {
     baseUrl: env.OLLAMA_BASE_URL || DEFAULT_OLLAMA_BASE_URL,
-    model: env.OLLAMA_MODEL || DEFAULT_OLLAMA_MODEL
+    model: env.OLLAMA_MODEL || DEFAULT_OLLAMA_MODEL,
+    keepAlive: env.OLLAMA_KEEP_ALIVE || DEFAULT_OLLAMA_KEEP_ALIVE
   }
   if (env.OLLAMA_NUM_GPU !== undefined) {
     options.numGpu = env.OLLAMA_NUM_GPU
@@ -63,6 +65,7 @@ export async function summarizeWithOllama(content, options = {}) {
   const fetchImpl = options.fetchImpl || globalThis.fetch
   const baseUrl = (options.baseUrl || DEFAULT_OLLAMA_BASE_URL).replace(/\/$/, '')
   const model = options.model || DEFAULT_OLLAMA_MODEL
+  const keepAlive = options.keepAlive || DEFAULT_OLLAMA_KEEP_ALIVE
   const requestedNumGpu = Number(options.numGpu)
   const ollamaOptions = {
     temperature: 0.2,
@@ -78,6 +81,7 @@ export async function summarizeWithOllama(content, options = {}) {
       model,
       prompt: buildMeetingSummaryPrompt(normalizedContent),
       stream: false,
+      keep_alive: keepAlive,
       options: ollamaOptions
     })
   })
