@@ -2,6 +2,7 @@
 import { reactive, ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { useApi } from '@/composables/useApi.js'
 import { formatTranscriptForEditor, useAsr } from '@/composables/useAsr.js'
+import { useLocalRecording } from '@/composables/useLocalRecording.js'
 import { mergeSummaryIntoContent, useSummarizer } from '@/composables/useSummarizer.js'
 import { useDateUtils } from '@/composables/useDateUtils.js'
 
@@ -11,6 +12,7 @@ const emit = defineEmits(['save', 'close'])
 const dt = useDateUtils()
 const api = useApi()
 const asr = useAsr()
+const localRecording = useLocalRecording()
 const summarizer = useSummarizer()
 
 const form = reactive({
@@ -28,8 +30,18 @@ const contentRef = ref(null)
 const audioInputRef = ref(null)
 const isTranscribing = ref(false)
 const isSummarizing = ref(false)
+const isRecording = ref(false)
+const isFinishingRecording = ref(false)
 const asrStatus = ref('')
 const summaryStatus = ref('')
+const recordingStatus = ref('')
+const mediaRecorder = ref(null)
+const mediaStream = ref(null)
+const recordingSession = ref(null)
+const recordingChunkIndex = ref(0)
+const recordingUploads = ref([])
+const recordingTimer = ref(null)
+const recordingSeconds = ref(0)
 const autoSaveTimer = ref(null)
 const autoSaveLabel = ref('')
 
@@ -166,6 +178,149 @@ async function handleAudioSelected(event) {
     asrStatus.value = error?.message || 'ASR 服务不可用'
   } finally {
     isTranscribing.value = false
+  }
+}
+
+// ===== 本机会议录音 =====
+function getRecordingMimeType() {
+  if (!window.MediaRecorder) return ''
+  const candidates = [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+  ]
+  return candidates.find((mimeType) => window.MediaRecorder.isTypeSupported(mimeType)) || ''
+}
+
+function formatRecordingDuration(seconds) {
+  const safeSeconds = Math.max(0, Math.floor(Number(seconds) || 0))
+  const minutes = Math.floor(safeSeconds / 60)
+  const remainingSeconds = safeSeconds % 60
+  return `${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`
+}
+
+function startRecordingTimer() {
+  recordingSeconds.value = 0
+  if (recordingTimer.value) clearInterval(recordingTimer.value)
+  recordingTimer.value = setInterval(() => {
+    recordingSeconds.value += 1
+    if (isRecording.value) {
+      recordingStatus.value = `录音中 ${formatRecordingDuration(recordingSeconds.value)}`
+    }
+  }, 1000)
+}
+
+function stopRecordingTimer() {
+  if (recordingTimer.value) {
+    clearInterval(recordingTimer.value)
+    recordingTimer.value = null
+  }
+}
+
+function stopRecordingTracks() {
+  mediaStream.value?.getTracks?.().forEach((track) => track.stop())
+  mediaStream.value = null
+}
+
+function appendRecordingResult(result) {
+  const transcript = formatTranscriptForEditor(result.asr)
+  let nextContent = form.content.trimEnd()
+  if (transcript) {
+    nextContent = nextContent ? `${nextContent}\n\n${transcript}` : transcript
+  }
+  if (result.summary) {
+    nextContent = mergeSummaryIntoContent(nextContent, result.summary)
+  }
+  form.content = nextContent
+  nextTick(() => {
+    contentRef.value?.focus()
+    const end = form.content.length
+    contentRef.value?.setSelectionRange(end, end)
+  })
+}
+
+async function startMeetingRecording() {
+  if (isRecording.value || isFinishingRecording.value) return
+  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+    recordingStatus.value = '当前浏览器不支持录音'
+    return
+  }
+
+  const mimeType = getRecordingMimeType()
+  if (!mimeType) {
+    recordingStatus.value = '当前浏览器不支持 WebM 录音'
+    return
+  }
+
+  try {
+    recordingStatus.value = '检测本机服务...'
+    await localRecording.checkHealth()
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    const session = await localRecording.startRecording({
+      title: form.title,
+      date: form.date,
+      startTime: form.startTime
+    })
+
+    if (!form.startTime) recordStartTime()
+    mediaStream.value = stream
+    recordingSession.value = session
+    recordingChunkIndex.value = 0
+    recordingUploads.value = []
+    mediaRecorder.value = new MediaRecorder(stream, { mimeType })
+    mediaRecorder.value.ondataavailable = (event) => {
+      if (!event.data?.size || !recordingSession.value) return
+      const index = recordingChunkIndex.value
+      recordingChunkIndex.value += 1
+      const upload = localRecording.uploadChunk({
+        recordingId: recordingSession.value.id,
+        index,
+        blob: event.data
+      })
+      recordingUploads.value.push(upload)
+    }
+    mediaRecorder.value.onstop = finishMeetingRecording
+    mediaRecorder.value.start(30000)
+    isRecording.value = true
+    recordingStatus.value = '录音中 00:00'
+    startRecordingTimer()
+  } catch (error) {
+    console.error('开始会议录音失败:', error)
+    recordingStatus.value = error?.message || '本机录音服务不可用'
+    stopRecordingTimer()
+    stopRecordingTracks()
+    isRecording.value = false
+    recordingSession.value = null
+  }
+}
+
+function stopMeetingRecording() {
+  if (!isRecording.value || !mediaRecorder.value) return
+  isRecording.value = false
+  isFinishingRecording.value = true
+  recordingStatus.value = '结束录音，正在整理...'
+  recordEndTime()
+  stopRecordingTimer()
+  mediaRecorder.value.stop()
+}
+
+async function finishMeetingRecording() {
+  try {
+    stopRecordingTracks()
+    await Promise.all(recordingUploads.value)
+    const result = await localRecording.finishRecording(recordingSession.value.id)
+    appendRecordingResult(result)
+    recordingStatus.value = `录音已整理 ${formatRecordingDuration(recordingSeconds.value)}`
+    setTimeout(() => {
+      if (recordingStatus.value.startsWith('录音已整理')) recordingStatus.value = ''
+    }, 5000)
+  } catch (error) {
+    console.error('会议录音整理失败:', error)
+    recordingStatus.value = error?.message || '会议录音整理失败'
+  } finally {
+    isFinishingRecording.value = false
+    mediaRecorder.value = null
+    recordingSession.value = null
+    recordingUploads.value = []
   }
 }
 
@@ -445,6 +600,8 @@ onMounted(() => {
 
 onUnmounted(() => {
   stopAutoSave()
+  stopRecordingTimer()
+  stopRecordingTracks()
 })
 </script>
 
@@ -539,6 +696,18 @@ onUnmounted(() => {
       class="hidden"
       @change="handleAudioSelected"
     />
+    <div class="w-px h-4 bg-slate-200 mx-1"></div>
+    <button
+      @click="isRecording ? stopMeetingRecording() : startMeetingRecording()"
+      :disabled="isFinishingRecording || isTranscribing || isSummarizing"
+      class="btn-ghost text-xs px-2 py-1 font-medium"
+      :class="isRecording ? 'text-red-500' : (isFinishingRecording || isTranscribing || isSummarizing ? 'opacity-50 cursor-not-allowed' : 'text-primary-500')"
+      title="本机会议录音，结束后自动转写并整理纪要"
+    >
+      <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/></svg>
+      {{ isRecording ? '结束录音' : (isFinishingRecording ? '整理录音...' : '会议录音') }}
+    </button>
+    <span v-if="recordingStatus" class="text-[10px] text-slate-400">{{ recordingStatus }}</span>
     <div class="w-px h-4 bg-slate-200 mx-1"></div>
     <button
       @click="chooseAudioFile"

@@ -1,12 +1,13 @@
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.audio import AudioValidationError, convert_mp3_to_wav_bytes, split_wav_bytes, validate_wav_bytes
+from app.audio import AudioValidationError, convert_audio_to_wav_bytes, convert_mp3_to_wav_bytes, split_wav_bytes, validate_wav_bytes
 from app.config import MAX_UPLOAD_BYTES
 from app.model import NemoRecognizer, Recognizer
 
 WAV_UPLOAD_TYPES = {"audio/wav", "audio/x-wav", "audio/wave"}
 MP3_UPLOAD_TYPES = {"audio/mpeg", "audio/mp3"}
+WEBM_UPLOAD_TYPES = {"audio/webm", "video/webm"}
 TRANSCRIBE_CHUNK_SECONDS = 60.0
 TRANSCRIBE_OVERLAP_SECONDS = 1.0
 LOCAL_FRONTEND_ORIGINS = {
@@ -21,6 +22,8 @@ def _upload_kind(file: UploadFile) -> str | None:
         return "wav"
     if file.content_type in MP3_UPLOAD_TYPES or filename.endswith(".mp3"):
         return "mp3"
+    if file.content_type in WEBM_UPLOAD_TYPES or filename.endswith(".webm"):
+        return "webm"
     return None
 
 
@@ -63,7 +66,7 @@ def create_app(recognizer: Recognizer | None = None) -> FastAPI:
         if upload_kind is None:
             raise HTTPException(
                 status_code=415,
-                detail="Only WAV and MP3 uploads are supported.",
+                detail="Only WAV, MP3, and WebM uploads are supported.",
             )
 
         data = await file.read()
@@ -71,7 +74,12 @@ def create_app(recognizer: Recognizer | None = None) -> FastAPI:
             raise HTTPException(status_code=413, detail="Uploaded audio is too large.")
 
         try:
-            wav_data = convert_mp3_to_wav_bytes(data) if upload_kind == "mp3" else data
+            if upload_kind == "mp3":
+                wav_data = convert_mp3_to_wav_bytes(data)
+            elif upload_kind == "webm":
+                wav_data = convert_audio_to_wav_bytes(data, input_suffix=".webm", label="WebM")
+            else:
+                wav_data = data
             info = validate_wav_bytes(wav_data)
         except AudioValidationError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc

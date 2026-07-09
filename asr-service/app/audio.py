@@ -37,10 +37,11 @@ def validate_wav_bytes(data: bytes) -> AudioInfo:
     return AudioInfo(channels=channels, sample_rate=sample_rate, duration_seconds=duration)
 
 
-def convert_mp3_to_wav_bytes(data: bytes) -> bytes:
+def convert_audio_to_wav_bytes(data: bytes, input_suffix: str, label: str) -> bytes:
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_path = Path(tmp_dir)
-        input_path = tmp_path / "input.mp3"
+        suffix = input_suffix if input_suffix.startswith(".") else f".{input_suffix}"
+        input_path = tmp_path / f"input{suffix}"
         output_path = tmp_path / "output.wav"
         input_path.write_bytes(data)
 
@@ -64,9 +65,13 @@ def convert_mp3_to_wav_bytes(data: bytes) -> bytes:
                 capture_output=True,
             )
         except (FileNotFoundError, subprocess.CalledProcessError) as exc:
-            raise AudioValidationError("Upload must be a valid MP3 file.") from exc
+            raise AudioValidationError(f"Upload must be a valid {label} file.") from exc
 
         return output_path.read_bytes()
+
+
+def convert_mp3_to_wav_bytes(data: bytes) -> bytes:
+    return convert_audio_to_wav_bytes(data, input_suffix=".mp3", label="MP3")
 
 
 def split_wav_bytes(data: bytes, chunk_seconds: float, overlap_seconds: float) -> list[AudioChunk]:

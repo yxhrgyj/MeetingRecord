@@ -4,6 +4,7 @@ import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { randomUUID } from 'crypto'
+import { finishRecordingPipeline, saveRecordingChunk, startRecordingSession } from './server/localRecording.js'
 import { buildSummarizerOptions, summarizeWithOllama } from './server/ollamaSummarizer.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -11,6 +12,7 @@ const __dirname = path.dirname(__filename)
 
 const app = express()
 const PORT = process.env.PORT || 3001
+const ASR_BASE_URL = process.env.ASR_BASE_URL || 'http://127.0.0.1:8000'
 
 app.use(cors())
 app.use(express.json())
@@ -25,6 +27,11 @@ if (fs.existsSync(distPath)) {
 const DATA_DIR = path.join(__dirname, 'data')
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true })
+}
+
+const RECORDINGS_DIR = process.env.MEETING_RECORDINGS_DIR || path.join(__dirname, 'recordings')
+if (!fs.existsSync(RECORDINGS_DIR)) {
+  fs.mkdirSync(RECORDINGS_DIR, { recursive: true })
 }
 
 // 工具函数
@@ -74,6 +81,70 @@ function meetingToMarkdown(m) {
 }
 
 // ===== API 路由 =====
+
+app.get('/api/local/health', (req, res) => {
+  res.json({
+    ok: true,
+    service: 'MeetingRecord Local Agent',
+    recordingsDir: RECORDINGS_DIR,
+    asrBaseUrl: ASR_BASE_URL,
+    summarizerModel: buildSummarizerOptions(process.env).model
+  })
+})
+
+app.post('/api/local/recordings/start', async (req, res) => {
+  try {
+    const session = await startRecordingSession({
+      recordingsDir: RECORDINGS_DIR,
+      title: req.body?.title || ''
+    })
+    res.status(201).json(session)
+  } catch (error) {
+    console.error('Local recording start failed:', error)
+    res.status(500).json({ message: error?.message || 'Failed to start local recording.' })
+  }
+})
+
+app.post('/api/local/recordings/:id/chunks', express.raw({ type: '*/*', limit: '100mb' }), async (req, res) => {
+  try {
+    const chunk = await saveRecordingChunk({
+      recordingsDir: RECORDINGS_DIR,
+      recordingId: req.params.id,
+      index: req.query.index,
+      data: req.body,
+      mimeType: req.headers['content-type'] || 'audio/webm'
+    })
+    res.status(201).json({ index: chunk.index, filename: chunk.filename })
+  } catch (error) {
+    console.error('Local recording chunk failed:', error)
+    res.status(400).json({ message: error?.message || 'Failed to store recording chunk.' })
+  }
+})
+
+app.post('/api/local/recordings/:id/finish', async (req, res) => {
+  try {
+    const summarizerOptions = buildSummarizerOptions(process.env)
+    const result = await finishRecordingPipeline({
+      recordingsDir: RECORDINGS_DIR,
+      recordingId: req.params.id,
+      asrBaseUrl: ASR_BASE_URL,
+      summarizeFn: (content) => summarizeWithOllama(content, summarizerOptions)
+    })
+    res.json({
+      recording: {
+        filename: result.recording.filename,
+        size: result.recording.size
+      },
+      asr: result.asr,
+      transcript: result.transcript,
+      summary: result.summary,
+      model: summarizerOptions.model
+    })
+  } catch (error) {
+    console.error('Local recording finish failed:', error)
+    res.status(503).json({ message: error?.message || 'Failed to finish local recording.' })
+  }
+})
 
 app.post('/api/summarize', async (req, res) => {
   const content = String(req.body?.content || '').trim()

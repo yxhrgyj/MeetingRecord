@@ -3,7 +3,7 @@ import wave
 
 import pytest
 
-from app.audio import AudioValidationError, split_wav_bytes, validate_wav_bytes
+from app.audio import AudioValidationError, convert_audio_to_wav_bytes, split_wav_bytes, validate_wav_bytes
 
 
 def make_wav(seconds: float = 0.1, sample_rate: int = 16000) -> bytes:
@@ -27,6 +27,26 @@ def test_validate_wav_bytes_accepts_mono_wav():
 def test_validate_wav_bytes_rejects_non_wav():
     with pytest.raises(AudioValidationError, match="valid WAV"):
         validate_wav_bytes(b"not a wav")
+
+
+def test_convert_audio_to_wav_bytes_runs_ffmpeg(monkeypatch, tmp_path):
+    calls = []
+    expected_wav = make_wav()
+
+    def fake_run(args, check, capture_output):
+        calls.append(args)
+        output_path = args[-1]
+        with open(output_path, "wb") as output:
+            output.write(expected_wav)
+
+    monkeypatch.setattr("app.audio.subprocess.run", fake_run)
+
+    result = convert_audio_to_wav_bytes(b"webm bytes", input_suffix=".webm", label="WebM")
+
+    assert result == expected_wav
+    assert calls
+    assert calls[0][calls[0].index("-ac") + 1] == "1"
+    assert calls[0][calls[0].index("-ar") + 1] == "16000"
 
 
 def test_split_wav_bytes_returns_overlapping_valid_chunks():
