@@ -1,7 +1,27 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { useLocalRecording } from '../src/composables/useLocalRecording.js'
+import { resolveLocalAgentBaseUrl, useLocalRecording } from '../src/composables/useLocalRecording.js'
+
+test('resolveLocalAgentBaseUrl uses same origin when served by the local agent', () => {
+  assert.equal(
+    resolveLocalAgentBaseUrl({
+      env: {},
+      location: { origin: 'http://192.168.1.20:3001', port: '3001' }
+    }),
+    'http://192.168.1.20:3001/api'
+  )
+})
+
+test('resolveLocalAgentBaseUrl defaults to localhost for cloud or vite pages', () => {
+  assert.equal(
+    resolveLocalAgentBaseUrl({
+      env: {},
+      location: { origin: 'https://meeting-assistant-136.pages.dev', port: '' }
+    }),
+    'http://127.0.0.1:3001/api'
+  )
+})
 
 test('useLocalRecording calls local agent health endpoint', async () => {
   const calls = []

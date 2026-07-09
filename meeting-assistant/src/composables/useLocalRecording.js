@@ -1,7 +1,17 @@
 const DEFAULT_LOCAL_AGENT_BASE_URL = 'http://127.0.0.1:3001/api'
 
+export function resolveLocalAgentBaseUrl({ env = import.meta.env, location = globalThis.location } = {}) {
+  if (env?.VITE_LOCAL_AGENT_BASE_URL) {
+    return env.VITE_LOCAL_AGENT_BASE_URL
+  }
+  if (location?.port === '3001') {
+    return `${location.origin}/api`
+  }
+  return DEFAULT_LOCAL_AGENT_BASE_URL
+}
+
 function getDefaultBaseUrl() {
-  return import.meta.env?.VITE_LOCAL_AGENT_BASE_URL || DEFAULT_LOCAL_AGENT_BASE_URL
+  return resolveLocalAgentBaseUrl()
 }
 
 async function readError(response) {
