@@ -82,15 +82,18 @@ def create_app(recognizer: Recognizer | None = None) -> FastAPI:
             overlap_seconds=TRANSCRIBE_OVERLAP_SECONDS,
         )
         segments = []
-        for chunk in chunks:
-            result = active_recognizer.transcribe_wav(chunk.data)
-            segments.append(
-                {
-                    "startSeconds": round(chunk.start_seconds, 3),
-                    "endSeconds": round(chunk.end_seconds, 3),
-                    "text": _clean_transcript_text(result.text),
-                }
-            )
+        try:
+            for chunk in chunks:
+                result = active_recognizer.transcribe_wav(chunk.data)
+                segments.append(
+                    {
+                        "startSeconds": round(chunk.start_seconds, 3),
+                        "endSeconds": round(chunk.end_seconds, 3),
+                        "text": _clean_transcript_text(result.text),
+                    }
+                )
+        finally:
+            active_recognizer.unload_model()
 
         return {
             "text": "\n\n".join(segment["text"] for segment in segments if segment["text"]),

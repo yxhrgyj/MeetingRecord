@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -36,3 +37,24 @@ def test_nemo_recognizer_transcribes_wav_bytes_with_loaded_model():
     assert fake_model.override_config.verbose is False
     assert fake_model.paths
     assert not Path(fake_model.paths[0]).exists()
+
+
+def test_nemo_recognizer_unloads_model_and_releases_cuda_cache(monkeypatch):
+    calls = []
+    fake_torch = SimpleNamespace(
+        cuda=SimpleNamespace(
+            is_available=lambda: True,
+            empty_cache=lambda: calls.append("empty_cache"),
+            ipc_collect=lambda: calls.append("ipc_collect"),
+        )
+    )
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    recognizer = NemoRecognizer()
+    recognizer._model = object()
+    recognizer.model_loaded = True
+
+    recognizer.unload_model()
+
+    assert recognizer._model is None
+    assert recognizer.model_loaded is False
+    assert calls == ["empty_cache", "ipc_collect"]

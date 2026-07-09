@@ -15,11 +15,17 @@ class FakeRecognizer:
     def __init__(self) -> None:
         self.last_data: bytes | None = None
         self.calls = 0
+        self.events: list[str] = []
 
     def transcribe_wav(self, data: bytes) -> TranscriptionResult:
         self.last_data = data
         self.calls += 1
+        self.events.append(f"transcribe:{self.calls}")
         return TranscriptionResult(text="test transcript", language="zh-CN")
+
+    def unload_model(self) -> None:
+        self.events.append("unload")
+        self.model_loaded = False
 
 
 def make_wav(seconds: float = 0.1) -> bytes:
@@ -93,6 +99,22 @@ def test_transcribe_returns_timestamped_segments_for_long_upload(monkeypatch):
     assert body["segments"][0]["startSeconds"] == 0
     assert 0.79 <= body["segments"][1]["startSeconds"] <= 0.81
     assert body["text"] == "test transcript\n\ntest transcript\n\ntest transcript"
+
+
+def test_transcribe_unloads_recognizer_after_all_chunks(monkeypatch):
+    recognizer = FakeRecognizer()
+    monkeypatch.setattr(main_module, "TRANSCRIBE_CHUNK_SECONDS", 1.0)
+    monkeypatch.setattr(main_module, "TRANSCRIBE_OVERLAP_SECONDS", 0.2)
+    client = TestClient(main_module.create_app(recognizer))
+
+    response = client.post(
+        "/transcribe",
+        files={"file": ("sample.wav", make_wav(seconds=2.2), "audio/wav")},
+    )
+
+    assert response.status_code == 200
+    assert recognizer.events == ["transcribe:1", "transcribe:2", "transcribe:3", "unload"]
+    assert recognizer.model_loaded is False
 
 
 def test_transcribe_converts_mp3_upload(monkeypatch):

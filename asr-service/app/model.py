@@ -17,6 +17,9 @@ class Recognizer(Protocol):
     def transcribe_wav(self, data: bytes) -> TranscriptionResult:
         ...
 
+    def unload_model(self) -> None:
+        ...
+
 
 class NemoRecognizer:
     model_loaded = False
@@ -35,6 +38,27 @@ class NemoRecognizer:
             self._model = self._model.to("cuda")
             self.model_loaded = True
         return self._model
+
+    def unload_model(self) -> None:
+        if self._model is None:
+            self.model_loaded = False
+            return
+
+        self._model = None
+        self.model_loaded = False
+
+        import gc
+
+        gc.collect()
+
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.ipc_collect()
+        except Exception:
+            pass
 
     def transcribe_wav(self, data: bytes) -> TranscriptionResult:
         import tempfile
