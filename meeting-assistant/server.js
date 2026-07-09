@@ -4,6 +4,7 @@ import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { randomUUID } from 'crypto'
+import { DOCX_MIME_TYPE, meetingToDocxBlob, monthToDocxBlob } from './functions/_shared/docxExport.js'
 import { downloadContentDisposition } from './functions/_shared/meetings.js'
 import { finishRecordingPipeline, saveRecordingChunk, startRecordingSession } from './server/localRecording.js'
 import { buildSummarizerOptions, summarizeWithOllama } from './server/ollamaSummarizer.js'
@@ -259,13 +260,22 @@ app.delete('/api/meetings/:id', (req, res) => {
 })
 
 // 导出单个会议
-app.get('/api/meetings/:id/export', (req, res) => {
+app.get('/api/meetings/:id/export', async (req, res) => {
   const files = fs.readdirSync(DATA_DIR).filter(f => f.endsWith('.json'))
   for (const file of files) {
     const raw = fs.readFileSync(path.join(DATA_DIR, file), 'utf-8')
     const meetings = JSON.parse(raw)
     const found = meetings.find(m => m.id === req.params.id)
     if (found) {
+      const format = String(req.query.format || 'md').toLowerCase()
+      if (format === 'docx') {
+        const blob = await meetingToDocxBlob(found)
+        const buffer = Buffer.from(await blob.arrayBuffer())
+        res.setHeader('Content-Type', DOCX_MIME_TYPE)
+        res.setHeader('Content-Disposition', downloadContentDisposition(`会议纪要-${found.title}-${found.date}.docx`))
+        return res.send(buffer)
+      }
+
       const md = meetingToMarkdown(found)
       res.setHeader('Content-Type', 'text/markdown; charset=utf-8')
       res.setHeader('Content-Disposition', downloadContentDisposition(`会议纪要-${found.title}-${found.date}.md`))
@@ -276,7 +286,7 @@ app.get('/api/meetings/:id/export', (req, res) => {
 })
 
 // 导出整月会议
-app.get('/api/meetings/export/month', (req, res) => {
+app.get('/api/meetings/export/month', async (req, res) => {
   const month = req.query.month
   if (!month) return res.status(400).json({ message: '缺少 month 参数' })
 
@@ -291,6 +301,15 @@ app.get('/api/meetings/export/month', (req, res) => {
 
   // 按日期排序
   meetings.sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime))
+
+  const format = String(req.query.format || 'md').toLowerCase()
+  if (format === 'docx') {
+    const blob = await monthToDocxBlob({ year, month: mon, meetings })
+    const buffer = Buffer.from(await blob.arrayBuffer())
+    res.setHeader('Content-Type', DOCX_MIME_TYPE)
+    res.setHeader('Content-Disposition', downloadContentDisposition(`会议纪要月报-${year}年${mon}月.docx`))
+    return res.send(buffer)
+  }
 
   for (const m of meetings) {
     lines.push('---')

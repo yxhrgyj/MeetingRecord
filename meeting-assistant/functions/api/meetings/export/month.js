@@ -6,6 +6,7 @@ import {
   meetingToMarkdown,
   validateMonth
 } from '../../../_shared/meetings.js'
+import { docxResponse, monthToDocxBlob } from '../../../_shared/docxExport.js'
 
 export async function onRequestGet(context) {
   const auth = assertAuthorized(context.request, context.env)
@@ -16,6 +17,14 @@ export async function onRequestGet(context) {
     const month = validateMonth(url.searchParams.get('month'))
     const [year, mon] = month.split('-').map(Number)
     const meetings = await listMeetings(context.env.DB, month)
+    const format = String(url.searchParams.get('format') || 'md').toLowerCase()
+
+    if (format === 'docx') {
+      return docxResponse(
+        await monthToDocxBlob({ year, month: mon, meetings }),
+        `会议纪要月报-${year}年${mon}月.docx`
+      )
+    }
 
     const lines = []
     lines.push(`# 会议纪要月报 - ${year}年${mon}月`)
