@@ -4,6 +4,7 @@ import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { randomUUID } from 'crypto'
+import { downloadContentDisposition } from './functions/_shared/meetings.js'
 import { finishRecordingPipeline, saveRecordingChunk, startRecordingSession } from './server/localRecording.js'
 import { buildSummarizerOptions, summarizeWithOllama } from './server/ollamaSummarizer.js'
 
@@ -267,7 +268,7 @@ app.get('/api/meetings/:id/export', (req, res) => {
     if (found) {
       const md = meetingToMarkdown(found)
       res.setHeader('Content-Type', 'text/markdown; charset=utf-8')
-      res.setHeader('Content-Disposition', `attachment; filename="会议纪要-${found.title}-${found.date}.md"`)
+      res.setHeader('Content-Disposition', downloadContentDisposition(`会议纪要-${found.title}-${found.date}.md`))
       return res.send(md)
     }
   }
@@ -299,7 +300,7 @@ app.get('/api/meetings/export/month', (req, res) => {
 
   const md = lines.join('\n')
   res.setHeader('Content-Type', 'text/markdown; charset=utf-8')
-  res.setHeader('Content-Disposition', `attachment; filename="会议纪要月报-${year}年${mon}月.md"`)
+  res.setHeader('Content-Disposition', downloadContentDisposition(`会议纪要月报-${year}年${mon}月.md`))
   res.send(md)
 })
 

@@ -201,13 +201,23 @@ export function meetingToMarkdown(m) {
 }
 
 export function markdownResponse(markdown, filename) {
-  const safeFilename = sanitizeFilename(filename)
   return new Response(markdown, {
     headers: {
       'Content-Type': 'text/markdown; charset=utf-8',
-      'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(safeFilename)}`
+      'Content-Disposition': downloadContentDisposition(filename)
     }
   })
+}
+
+export function downloadContentDisposition(filename) {
+  const safeFilename = sanitizeFilename(filename)
+  const fallback = safeFilename
+    .replace(/[^\x20-\x7E]+/g, '-')
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '') || 'meeting.md'
+
+  return `attachment; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(safeFilename)}`
 }
 
 export function sanitizeFilename(name) {

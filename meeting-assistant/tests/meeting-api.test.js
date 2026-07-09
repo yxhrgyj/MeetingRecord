@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   assertAuthorized,
   deserializeMeeting,
+  downloadContentDisposition,
   meetingToMarkdown,
   serializeMeetingPayload,
   updateMeeting
@@ -89,6 +90,14 @@ test('markdown export includes metadata and freeform content', () => {
   assert.match(markdown, /日期/)
   assert.match(markdown, /张三、李四/)
   assert.match(markdown, /继续推进/)
+})
+
+test('downloadContentDisposition encodes non-ascii filenames for headers', () => {
+  const value = downloadContentDisposition('会议纪要-组织绩效-2026-07-09.md')
+
+  assert.match(value, /^attachment; filename="[-_.a-zA-Z0-9]+\.md"; filename\*=UTF-8''/)
+  assert.match(value, /%E4%BC%9A%E8%AE%AE%E7%BA%AA%E8%A6%81/)
+  assert.doesNotMatch(value, /会议纪要/)
 })
 
 test('updateMeeting updates by id so changing date across months is allowed', async () => {
