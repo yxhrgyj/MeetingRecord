@@ -1,8 +1,3 @@
 @echo off
 cd /d "%~dp0"
-
-echo 会议记录助手启动中...
-echo.
-
-start http://localhost:3001
-node server.js
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\start-local.ps1"
