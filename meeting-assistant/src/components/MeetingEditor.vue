@@ -1,13 +1,18 @@
 <script setup>
-import { reactive, ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { computed, reactive, ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { useApi } from '@/composables/useApi.js'
 import { formatTranscriptForEditor, useAsr } from '@/composables/useAsr.js'
 import { useLocalRecording } from '@/composables/useLocalRecording.js'
 import { mergeSummaryIntoContent, useSummarizer } from '@/composables/useSummarizer.js'
 import { useDateUtils } from '@/composables/useDateUtils.js'
+import MeetingAssistant from '@/components/MeetingAssistant.vue'
+import MeetingDocument from '@/components/MeetingDocument.vue'
+import MeetingEditorToolbar from '@/components/MeetingEditorToolbar.vue'
+import MeetingWorkspace from '@/components/MeetingWorkspace.vue'
+import MeetingWorkspaceHeader from '@/components/MeetingWorkspaceHeader.vue'
 
 const props = defineProps({ initialData: Object })
-const emit = defineEmits(['save', 'close'])
+const emit = defineEmits(['save', 'close', 'export'])
 
 const dt = useDateUtils()
 const api = useApi()
@@ -25,9 +30,9 @@ const form = reactive({
   content: ''
 })
 
-const attendeeInput = ref('')
-const contentRef = ref(null)
+const documentRef = ref(null)
 const audioInputRef = ref(null)
+const assistantOpen = ref(false)
 const isTranscribing = ref(false)
 const isSummarizing = ref(false)
 const isRecording = ref(false)
@@ -45,6 +50,12 @@ const recordingSeconds = ref(0)
 const autoSaveTimer = ref(null)
 const autoSaveLabel = ref('')
 
+const retryKind = computed(() => {
+  if (/失败|不可用|异常|错误/.test(summaryStatus.value)) return 'summarize'
+  if (/失败|不可用|异常|错误/.test(recordingStatus.value)) return 'record'
+  return ''
+})
+
 function initForm() {
   if (props.initialData) {
     form.id = props.initialData.id || ''
@@ -58,19 +69,20 @@ function initForm() {
 }
 
 // ===== 参会人标签 =====
-function addAttendee() {
-  const name = attendeeInput.value.trim()
+function addAttendee(value) {
+  const name = String(value || '').trim()
   if (name && !form.attendees.includes(name)) {
     form.attendees.push(name)
-    attendeeInput.value = ''
   }
 }
 function removeAttendee(i) { form.attendees.splice(i, 1) }
-function onAttendeeKeydown(e) {
-  if (e.key === 'Enter' || e.key === ',') {
-    e.preventDefault()
-    addAttendee()
-  }
+
+function applyFormUpdate(nextForm) {
+  Object.assign(form, nextForm)
+}
+
+function getContentElement() {
+  return documentRef.value?.getContentElement?.()
 }
 
 // ===== 快捷记录时间 =====
@@ -85,7 +97,7 @@ function recordEndTime() {
 
 // ===== 快捷插入 =====
 function insertAtCursor(before, after = '') {
-  const el = contentRef.value
+  const el = getContentElement()
   if (!el) return
   const start = el.selectionStart
   const end = el.selectionEnd
@@ -100,7 +112,7 @@ function insertAtCursor(before, after = '') {
 }
 
 function replaceAtCursor(text) {
-  const el = contentRef.value
+  const el = getContentElement()
   if (!el) return
   const start = el.selectionStart
   const end = el.selectionEnd
@@ -146,6 +158,24 @@ function insertTemplate() {
 
 `
   insertAtCursor(tpl)
+}
+
+const toolbarCommands = {
+  heading: insertHeading,
+  subheading: insertSubheading,
+  bold: insertBold,
+  italic: insertItalic,
+  bullet: insertBullet,
+  numbered: insertNumbered,
+  checkbox: insertCheckbox,
+  quote: insertQuote,
+  code: insertCode,
+  divider: insertDivider,
+  template: insertTemplate
+}
+
+function runToolbarCommand(command) {
+  toolbarCommands[command]?.()
 }
 
 // ===== ASR 音频转写 =====
@@ -232,9 +262,10 @@ function appendRecordingResult(result) {
   }
   form.content = nextContent
   nextTick(() => {
-    contentRef.value?.focus()
+    const contentElement = getContentElement()
+    contentElement?.focus()
     const end = form.content.length
-    contentRef.value?.setSelectionRange(end, end)
+    contentElement?.setSelectionRange(end, end)
   })
 }
 
@@ -342,9 +373,10 @@ async function handleSummarize() {
     form.content = mergeSummaryIntoContent(form.content, result.summary)
     summaryStatus.value = '纪要已生成'
     nextTick(() => {
-      contentRef.value?.focus()
+      const contentElement = getContentElement()
+      contentElement?.focus()
       const end = form.content.length
-      contentRef.value?.setSelectionRange(end, end)
+      contentElement?.setSelectionRange(end, end)
     })
     setTimeout(() => {
       if (summaryStatus.value === '纪要已生成') summaryStatus.value = ''
@@ -406,6 +438,16 @@ function handleSubmit() {
   emit('save', { ...form, attendees: [...form.attendees] })
 }
 
+function handleExport(format = 'docx') {
+  if (!form.id) return
+  emit('export', { ...form, attendees: [...form.attendees] }, format)
+}
+
+function handleRetry(kind) {
+  if (kind === 'record') startMeetingRecording()
+  if (kind === 'summarize') handleSummarize()
+}
+
 // ===== 向上查找列表祖先（用于 Shift+Enter 软换行后仍能续号）=====
 function findListAncestor(text) {
   const lines = text.split('\n')
@@ -443,7 +485,7 @@ function renumberAfter(text, startNum) {
 
 // ===== 回车自动续号 =====
 function handleEnterKey(e) {
-  const el = contentRef.value
+  const el = getContentElement()
   if (!el) return
 
   const pos = el.selectionStart
@@ -560,7 +602,7 @@ function onKeydown(e) {
     // Shift+Enter：软换行，保持缩进与上一行文字对齐
     if (e.shiftKey) {
       e.preventDefault()
-      const el = contentRef.value
+      const el = getContentElement()
       if (!el) return
       const pos = el.selectionStart
       const before = form.content.substring(0, pos)
@@ -595,7 +637,7 @@ function onKeydown(e) {
 onMounted(() => {
   initForm()
   startAutoSave()
-  nextTick(() => contentRef.value?.focus())
+  nextTick(() => documentRef.value?.focusContent?.())
 })
 
 onUnmounted(() => {
@@ -606,152 +648,64 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <!-- 顶部栏 -->
-  <header class="flex-shrink-0 flex items-center justify-between px-6 py-3 border-b border-slate-100 bg-white">
-    <div class="flex items-center gap-4 min-w-0">
-      <button @click="emit('close')" class="btn-ghost text-slate-500 flex-shrink-0">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
-      </button>
-      <input
-        v-model="form.title"
-        type="text"
-        class="text-lg font-semibold text-slate-800 bg-transparent border-none outline-none placeholder-slate-300 flex-1 min-w-0"
-        placeholder="输入会议标题..."
+  <MeetingWorkspace mode="edit" :assistant-open="assistantOpen" @update:assistant-open="assistantOpen = $event">
+    <template #header>
+      <MeetingWorkspaceHeader
+        mode="edit"
+        :save-status="autoSaveLabel"
+        :can-export="Boolean(form.id)"
+        @close="emit('close')"
+        @complete="handleSubmit"
+        @export="handleExport('docx')"
+        @toggle-assistant="assistantOpen = !assistantOpen"
       />
-    </div>
-    <div class="flex items-center gap-3 flex-shrink-0">
-      <span
-        v-if="autoSaveLabel"
-        class="text-[11px] transition-all duration-300"
-        :class="autoSaveLabel.includes('失败') ? 'text-red-400' : 'text-emerald-500'"
-      >{{ autoSaveLabel }}</span>
-      <button @click="handleSubmit" class="btn-primary text-sm">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
-        保存并返回
-      </button>
-    </div>
-  </header>
+    </template>
 
-  <!-- 元信息栏 -->
-  <div class="flex-shrink-0 px-6 py-3 border-b border-slate-50 bg-slate-50/50">
-    <div class="flex items-center gap-4 flex-wrap">
-      <div class="flex items-center gap-1.5 text-sm text-slate-500">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-        <input v-model="form.date" type="date" class="bg-transparent border-none outline-none text-slate-600 text-sm w-32" />
-      </div>
-      <div class="flex items-center gap-1 text-sm text-slate-500">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-        <input v-model="form.startTime" type="time" class="bg-transparent border-none outline-none text-slate-600 text-sm w-24" placeholder="开始" />
-        <button @click="recordStartTime" type="button" class="text-[10px] px-2 py-0.5 rounded border border-slate-200 text-slate-500 hover:bg-white hover:text-primary-600 hover:border-primary-300 transition-colors" title="记录当前时间为开始时间">开始</button>
-        <span class="text-slate-300">-</span>
-        <input v-model="form.endTime" type="time" class="bg-transparent border-none outline-none text-slate-600 text-sm w-24" placeholder="结束" />
-        <button @click="recordEndTime" type="button" class="text-[10px] px-2 py-0.5 rounded border border-slate-200 text-slate-500 hover:bg-white hover:text-primary-600 hover:border-primary-300 transition-colors" title="记录当前时间为结束时间">结束</button>
-      </div>
-      <div class="h-4 w-px bg-slate-200"></div>
-      <div class="flex items-center gap-1.5 flex-wrap">
-        <span
-          v-for="(name, i) in form.attendees" :key="i"
-          class="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-white border border-slate-200 text-slate-600"
-        >{{ name }}<button @click="removeAttendee(i)" class="text-slate-300 hover:text-red-400">&times;</button></span>
-        <input
-          v-model="attendeeInput"
-          @keydown="onAttendeeKeydown" @blur="addAttendee"
-          type="text"
-          class="bg-transparent border-none outline-none text-sm text-slate-400 placeholder-slate-300 w-24"
-          placeholder="+ 参会人"
-        />
-      </div>
-    </div>
-  </div>
+    <template #document>
+      <MeetingDocument
+        ref="documentRef"
+        :model-value="form"
+        mode="edit"
+        @update:model-value="applyFormUpdate"
+        @add-attendee="addAttendee"
+        @remove-attendee="removeAttendee"
+        @content-keydown="onKeydown"
+      >
+        <template #toolbar>
+          <MeetingEditorToolbar @command="runToolbarCommand" />
+        </template>
+      </MeetingDocument>
+    </template>
 
-  <!-- 快捷工具栏 -->
-  <div class="flex-shrink-0 flex items-center gap-0.5 px-6 py-2 border-b border-slate-50 bg-white">
-    <button @click="insertHeading" class="btn-ghost text-xs px-2 py-1 font-mono" title="二级标题">H2</button>
-    <button @click="insertSubheading" class="btn-ghost text-xs px-2 py-1 font-mono" title="三级标题">H3</button>
-    <div class="w-px h-4 bg-slate-200 mx-1"></div>
-    <button @click="insertBold" class="btn-ghost text-xs px-2 py-1 font-bold" title="加粗">B</button>
-    <button @click="insertItalic" class="btn-ghost text-xs px-2 py-1 italic" title="斜体">I</button>
-    <div class="w-px h-4 bg-slate-200 mx-1"></div>
-    <button @click="insertNumbered" class="btn-ghost text-xs px-2 py-1" title="有序列表">
-      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h12M7 12h12M7 16h12M4 8h.01M4 12h.01M4 16h.01"/></svg>
-    </button>
-    <button @click="insertBullet" class="btn-ghost text-xs px-2 py-1" title="无序列表">
-      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7"/></svg>
-    </button>
-    <button @click="insertCheckbox" class="btn-ghost text-xs px-2 py-1" title="待办勾选框">
-      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
-    </button>
-    <button @click="insertQuote" class="btn-ghost text-xs px-2 py-1" title="引用">❝</button>
-    <button @click="insertCode" class="btn-ghost text-xs px-2 py-1 font-mono" title="代码块">&lt;/&gt;</button>
-    <button @click="insertDivider" class="btn-ghost text-xs px-2 py-1" title="分隔线">—</button>
-    <div class="w-px h-4 bg-slate-200 mx-1"></div>
-    <button @click="insertTemplate" class="btn-ghost text-xs px-2 py-1 text-primary-500 font-medium" title="插入会议模板">
-      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-      会议模板
-    </button>
-    <input
-      ref="audioInputRef"
-      type="file"
-      accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,.mp3,.wav"
-      class="hidden"
-      @change="handleAudioSelected"
-    />
-    <div class="w-px h-4 bg-slate-200 mx-1"></div>
-    <button
-      @click="isRecording ? stopMeetingRecording() : startMeetingRecording()"
-      :disabled="isFinishingRecording || isTranscribing || isSummarizing"
-      class="btn-ghost text-xs px-2 py-1 font-medium"
-      :class="isRecording ? 'text-red-500' : (isFinishingRecording || isTranscribing || isSummarizing ? 'opacity-50 cursor-not-allowed' : 'text-primary-500')"
-      title="本机会议录音，结束后自动转写并整理纪要"
-    >
-      <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/></svg>
-      {{ isRecording ? '结束录音' : (isFinishingRecording ? '整理录音...' : '会议录音') }}
-    </button>
-    <span v-if="recordingStatus" class="text-[10px] text-slate-400">{{ recordingStatus }}</span>
-    <div class="w-px h-4 bg-slate-200 mx-1"></div>
-    <button
-      @click="chooseAudioFile"
-      :disabled="isTranscribing"
-      class="btn-ghost text-xs px-2 py-1 font-medium"
-      :class="isTranscribing ? 'opacity-50 cursor-not-allowed' : 'text-primary-500'"
-      title="上传音频转写"
-    >
-      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 16V4m0 0l-4 4m4-4l4 4M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
-      {{ isTranscribing ? 'ASR...' : 'ASR' }}
-    </button>
-    <span v-if="asrStatus" class="text-[10px] text-slate-400">{{ asrStatus }}</span>
-    <div class="w-px h-4 bg-slate-200 mx-1"></div>
-    <button
-      @click="handleSummarize"
-      :disabled="isSummarizing || !form.content.trim()"
-      class="btn-ghost text-xs px-2 py-1 font-medium"
-      :class="isSummarizing || !form.content.trim() ? 'opacity-50 cursor-not-allowed' : 'text-primary-500'"
-      title="整理会议纪要"
-    >
-      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m5-11v14a2 2 0 01-2 2H6a2 2 0 01-2-2V5a2 2 0 012-2h8l5 5z"/></svg>
-      {{ isSummarizing ? '整理中...' : '整理纪要' }}
-    </button>
-    <span v-if="summaryStatus" class="text-[10px] text-slate-400">{{ summaryStatus }}</span>
-    <div class="ml-auto flex items-center gap-3 text-[10px] text-slate-300">
-      <span>每分钟自动保存</span>
-      <span>Enter 续号 · Shift+Enter 换行 · Ctrl+S 保存</span>
-    </div>
-  </div>
+    <template #assistant>
+      <MeetingAssistant
+        :is-recording="isRecording"
+        :is-finishing-recording="isFinishingRecording"
+        :is-transcribing="isTranscribing"
+        :is-summarizing="isSummarizing"
+        :recording-seconds="recordingSeconds"
+        :recording-status="recordingStatus"
+        :asr-status="asrStatus"
+        :summary-status="summaryStatus"
+        :has-content="Boolean(form.content.trim())"
+        :can-export="Boolean(form.id)"
+        :retry-kind="retryKind"
+        @record-toggle="isRecording ? stopMeetingRecording() : startMeetingRecording()"
+        @upload="chooseAudioFile"
+        @summarize="handleSummarize"
+        @export-markdown="handleExport('md')"
+        @export-docx="handleExport('docx')"
+        @retry="handleRetry"
+      />
+    </template>
+  </MeetingWorkspace>
 
-  <!-- 自由书写区 -->
-  <div class="flex-1 overflow-hidden">
-    <textarea
-      ref="contentRef"
-      v-model="form.content"
-      @keydown="onKeydown"
-      class="w-full h-full px-8 py-6 text-sm text-slate-700 leading-relaxed
-             bg-white border-none outline-none resize-none
-             placeholder-slate-300 font-mono"
-      placeholder="在此自由书写会议纪要…
+  <input
+    ref="audioInputRef"
+    type="file"
+    accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,.mp3,.wav"
+    class="hidden"
+    @change="handleAudioSelected"
+  />
 
-使用上方工具栏插入格式，或点击「会议模板」一键生成结构。
-
-每分钟自动保存，无需担心内容丢失。"
-    ></textarea>
-  </div>
 </template>
