@@ -2,17 +2,25 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useApi } from '@/composables/useApi.js'
 import { useDateUtils } from '@/composables/useDateUtils.js'
+import CalendarToolbar from '@/components/CalendarToolbar.vue'
 import CalendarView from '@/components/CalendarView.vue'
 import MeetingEditor from '@/components/MeetingEditor.vue'
 import MeetingDetail from '@/components/MeetingDetail.vue'
+import ModelSettingsDialog from '@/components/ModelSettingsDialog.vue'
 
 const api = useApi()
 const dt = useDateUtils()
 
 const currentDate = ref(dt.today())
-const currentView = ref('month')
+const mobileViewport = window.matchMedia?.('(max-width: 767px)')
+const currentView = ref(mobileViewport?.matches ? 'day' : 'month')
 const meetings = ref([])
 const loading = ref(false)
+const modelSettingsOpen = ref(false)
+const modelGatewayUrl = ref('https://model.yxhrgyj.cc.cd')
+const modelGatewayLoading = ref(false)
+const modelGatewaySaving = ref(false)
+const modelGatewayStatus = ref('')
 
 // 全屏页面状态
 const pageMode = ref(null)       // 'editor' | 'detail'
@@ -54,7 +62,6 @@ function navigate(dir) {
 
 function goToday() {
   currentDate.value = dt.today()
-  currentView.value = 'month'
 }
 
 // 打开全屏编辑器（新建）
@@ -112,13 +119,14 @@ async function handleDelete(id) {
   }
 }
 
-async function handleExport(meeting) {
+async function handleExport(meeting, format = 'docx') {
   try {
-    const blob = await api.exportMeeting(meeting.id, 'docx')
+    const blob = await api.exportMeeting(meeting.id, format)
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `会议纪要-${meeting.title}-${meeting.date}.docx`
+    const extension = format === 'md' ? 'md' : 'docx'
+    a.download = `会议纪要-${meeting.title}-${meeting.date}.${extension}`
     a.click()
     URL.revokeObjectURL(url)
   } catch (e) {
@@ -140,6 +148,52 @@ async function handleExportMonth() {
   }
 }
 
+async function openModelSettings() {
+  modelSettingsOpen.value = true
+  modelGatewayStatus.value = ''
+  modelGatewayLoading.value = true
+  try {
+    const settings = await api.getModelGatewaySettings()
+    modelGatewayUrl.value = settings.modelGatewayUrl || 'https://model.yxhrgyj.cc.cd'
+  } catch (e) {
+    modelGatewayStatus.value = '加载模型设置失败: ' + e.message
+  } finally {
+    modelGatewayLoading.value = false
+  }
+}
+
+function closeModelSettings() {
+  modelSettingsOpen.value = false
+  modelGatewayStatus.value = ''
+}
+
+async function saveModelGatewaySettings() {
+  modelGatewaySaving.value = true
+  modelGatewayStatus.value = ''
+  try {
+    const settings = await api.updateModelGatewaySettings(modelGatewayUrl.value)
+    modelGatewayUrl.value = settings.modelGatewayUrl || ''
+    modelGatewayStatus.value = '模型地址已保存'
+  } catch (e) {
+    modelGatewayStatus.value = '保存失败: ' + e.message
+  } finally {
+    modelGatewaySaving.value = false
+  }
+}
+
+async function testModelGateway() {
+  modelGatewaySaving.value = true
+  modelGatewayStatus.value = ''
+  try {
+    const health = await api.testModelGateway()
+    modelGatewayStatus.value = health.ok ? '模型服务连接正常' : `模型服务异常: ${health.status}`
+  } catch (e) {
+    modelGatewayStatus.value = '连接失败: ' + e.message
+  } finally {
+    modelGatewaySaving.value = false
+  }
+}
+
 watch([currentDate, currentView], () => {
   if (currentView.value === 'month') loadMeetings()
 })
@@ -149,60 +203,15 @@ onMounted(loadMeetings)
 
 <template>
   <div class="flex flex-col h-screen bg-slate-50">
-    <!-- 顶部导航 -->
-    <header class="flex-shrink-0 bg-white border-b border-slate-200/80 px-6 py-3">
-      <div class="flex items-center justify-between max-w-[1600px] mx-auto">
-        <div class="flex items-center gap-4">
-          <h1 class="text-lg font-semibold text-slate-800 tracking-tight">
-            <span class="text-primary-600">📋</span> 会议记录助手
-          </h1>
-          <div class="h-5 w-px bg-slate-200"></div>
-          <h2 class="text-sm font-medium text-slate-600">{{ viewTitle }}</h2>
-        </div>
-
-        <div class="flex items-center gap-2">
-          <!-- 视图切换 -->
-          <div class="flex bg-slate-100 rounded-lg p-0.5">
-            <button
-              v-for="v in [
-                { key: 'month', label: '月' },
-                { key: 'week', label: '周' },
-                { key: 'day', label: '日' }
-              ]"
-              :key="v.key"
-              @click="currentView = v.key"
-              :class="[
-                'px-3.5 py-1.5 text-xs font-medium rounded-md transition-all duration-150',
-                currentView === v.key
-                  ? 'bg-white text-slate-800 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700'
-              ]"
-            >{{ v.label }}</button>
-          </div>
-
-          <div class="h-5 w-px bg-slate-200 mx-1"></div>
-
-          <button @click="goToday" class="btn-secondary text-xs px-3 py-1.5">今天</button>
-          <button @click="navigate(-1)" class="btn-ghost">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
-          </button>
-          <button @click="navigate(1)" class="btn-ghost">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
-          </button>
-
-          <div class="h-5 w-px bg-slate-200 mx-1"></div>
-
-          <button @click="openNewRecord()" class="btn-primary text-xs px-3 py-1.5">
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-            新建纪要
-          </button>
-          <button @click="handleExportMonth" class="btn-secondary text-xs px-3 py-1.5">
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-            导出月报
-          </button>
-        </div>
-      </div>
-    </header>
+    <CalendarToolbar
+      v-model:view="currentView"
+      :title="viewTitle"
+      @navigate="navigate"
+      @today="goToday"
+      @create="openNewRecord()"
+      @model-settings="openModelSettings"
+      @export-month="handleExportMonth"
+    />
 
     <!-- 日历主体 -->
     <div class="flex-1 flex overflow-hidden">
@@ -226,6 +235,7 @@ onMounted(loadMeetings)
         <MeetingEditor
           :initialData="editingMeeting"
           @save="handleSave"
+          @export="handleExport"
           @close="closePage"
         />
       </div>
@@ -242,6 +252,19 @@ onMounted(loadMeetings)
           @close="closePage"
         />
       </div>
+    </Transition>
+
+    <Transition name="page">
+      <ModelSettingsDialog
+        v-if="modelSettingsOpen"
+        v-model="modelGatewayUrl"
+        :loading="modelGatewayLoading"
+        :saving="modelGatewaySaving"
+        :status="modelGatewayStatus"
+        @close="closeModelSettings"
+        @test="testModelGateway"
+        @save="saveModelGatewaySettings"
+      />
     </Transition>
   </div>
 </template>

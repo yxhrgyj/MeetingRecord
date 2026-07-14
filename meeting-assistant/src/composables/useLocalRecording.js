@@ -1,3 +1,5 @@
+import { fetchWithAuth } from './useAuthToken.js'
+
 const DEFAULT_LOCAL_AGENT_BASE_URL = 'http://127.0.0.1:3001/api'
 
 export function resolveLocalAgentBaseUrl({ env = import.meta.env, location = globalThis.location } = {}) {
@@ -7,7 +9,23 @@ export function resolveLocalAgentBaseUrl({ env = import.meta.env, location = glo
   if (location?.port === '3001') {
     return `${location.origin}/api`
   }
+  if (!isLocalPage(location)) {
+    return '/api'
+  }
   return DEFAULT_LOCAL_AGENT_BASE_URL
+}
+
+function isLocalPage(location) {
+  const hostname = location?.hostname || getHostname(location?.origin)
+  return ['localhost', '127.0.0.1', '::1'].includes(hostname)
+}
+
+function getHostname(origin) {
+  try {
+    return origin ? new URL(origin).hostname : ''
+  } catch {
+    return ''
+  }
 }
 
 function getDefaultBaseUrl() {
@@ -24,7 +42,7 @@ export function useLocalRecording(options = {}) {
   const fetchImpl = options.fetchImpl || globalThis.fetch
 
   async function requestJson(url, options = {}) {
-    const response = await fetchImpl(url, options)
+    const response = await fetchWithAuth(url, options, fetchImpl)
     if (!response.ok) {
       throw new Error(await readError(response))
     }

@@ -54,7 +54,7 @@ test('summarizeWithOllama posts prompt to local Ollama generate API', async () =
   assert.equal(summary, '## 会议纪要草稿\n\n### 关键结论\n- 继续推进')
 })
 
-test('summarizeWithOllama defaults to the smaller local Qwen model', async () => {
+test('summarizeWithOllama defaults to qwen3:8b for local and cloud gateways', async () => {
   let requestBody
   const fetchImpl = async (url, options) => {
     requestBody = JSON.parse(options.body)
@@ -71,7 +71,7 @@ test('summarizeWithOllama defaults to the smaller local Qwen model', async () =>
     baseUrl: 'http://ollama.test'
   })
 
-  assert.equal(requestBody.model, 'qwen3:4b')
+  assert.equal(requestBody.model, 'qwen3:8b')
   assert.equal(requestBody.keep_alive, '0s')
   assert.equal(Object.hasOwn(requestBody.options, 'num_gpu'), false)
 })
@@ -79,7 +79,7 @@ test('summarizeWithOllama defaults to the smaller local Qwen model', async () =>
 test('buildSummarizerOptions uses local defaults and preserves env overrides', () => {
   assert.deepEqual(buildSummarizerOptions({}), {
     baseUrl: 'http://127.0.0.1:11434',
-    model: 'qwen3:4b',
+    model: 'qwen3:8b',
     keepAlive: '0s'
   })
 

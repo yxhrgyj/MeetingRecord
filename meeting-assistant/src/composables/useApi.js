@@ -1,29 +1,19 @@
+import {
+  authHeaders as sharedAuthHeaders,
+  clearStoredToken as clearSharedStoredToken,
+  promptForToken as promptForSharedToken
+} from './useAuthToken.js'
+
 const BASE = '/api'
-const TOKEN_KEY = 'meeting_access_token'
-
-function getStoredToken() {
-  return localStorage.getItem(TOKEN_KEY) || ''
-}
-
-function promptForToken() {
-  const token = prompt('请输入会议助手访问口令')
-  if (token) localStorage.setItem(TOKEN_KEY, token)
-  return token || ''
-}
-
-function authHeaders() {
-  const token = getStoredToken()
-  return token ? { Authorization: `Bearer ${token}` } : {}
-}
 
 async function request(path, options = {}) {
   const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    headers: { 'Content-Type': 'application/json', ...sharedAuthHeaders() },
     ...options
   })
   if (res.status === 401) {
-    localStorage.removeItem(TOKEN_KEY)
-    const token = promptForToken()
+    clearSharedStoredToken()
+    const token = promptForSharedToken()
     if (token) {
       return request(path, options)
     }
@@ -65,11 +55,11 @@ export function useApi() {
 
   async function exportMeeting(id, format = 'md') {
     const res = await fetch(`${BASE}/meetings/${id}/export?format=${format}`, {
-      headers: authHeaders()
+      headers: sharedAuthHeaders()
     })
     if (res.status === 401) {
-      localStorage.removeItem(TOKEN_KEY)
-      const token = promptForToken()
+      clearSharedStoredToken()
+      const token = promptForSharedToken()
       if (token) return exportMeeting(id, format)
     }
     if (!res.ok) throw new Error('导出失败')
@@ -79,16 +69,42 @@ export function useApi() {
   async function exportMonth(year, month, format = 'md') {
     const mm = String(month).padStart(2, '0')
     const res = await fetch(`${BASE}/meetings/export/month?month=${year}-${mm}&format=${format}`, {
-      headers: authHeaders()
+      headers: sharedAuthHeaders()
     })
     if (res.status === 401) {
-      localStorage.removeItem(TOKEN_KEY)
-      const token = promptForToken()
+      clearSharedStoredToken()
+      const token = promptForSharedToken()
       if (token) return exportMonth(year, month, format)
     }
     if (!res.ok) throw new Error('导出失败')
     return res.blob()
   }
 
-  return { fetchMeetings, getMeeting, createMeeting, updateMeeting, deleteMeeting, exportMeeting, exportMonth }
+  async function getModelGatewaySettings() {
+    return request('/settings/model-gateway')
+  }
+
+  async function updateModelGatewaySettings(modelGatewayUrl) {
+    return request('/settings/model-gateway', {
+      method: 'PUT',
+      body: JSON.stringify({ modelGatewayUrl })
+    })
+  }
+
+  async function testModelGateway() {
+    return request('/model/health')
+  }
+
+  return {
+    fetchMeetings,
+    getMeeting,
+    createMeeting,
+    updateMeeting,
+    deleteMeeting,
+    exportMeeting,
+    exportMonth,
+    getModelGatewaySettings,
+    updateModelGatewaySettings,
+    testModelGateway
+  }
 }

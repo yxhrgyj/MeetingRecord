@@ -1,6 +1,9 @@
 node_modules/
 dist/
 data/
+scripts/.bin/
 .meeting-access-token
+.model-gateway-token
+model-tunnel-url.txt
 migrations/seed-from-json.sql
 .DS_Store

@@ -3,6 +3,21 @@ import assert from 'node:assert/strict'
 
 import { mergeSummaryIntoContent, useSummarizer } from '../src/composables/useSummarizer.js'
 
+function fakeStorage(values = {}) {
+  const store = new Map(Object.entries(values))
+  return {
+    getItem(key) {
+      return store.get(key) || ''
+    },
+    setItem(key, value) {
+      store.set(key, String(value))
+    },
+    removeItem(key) {
+      store.delete(key)
+    }
+  }
+}
+
 test('summarizeContent posts editor content to local API', async () => {
   const calls = []
   globalThis.fetch = async (url, options) => {
@@ -23,6 +38,30 @@ test('summarizeContent posts editor content to local API', async () => {
     content: '## 语音转写原文\n[00:00-00:30]\n讨论预算。'
   })
   assert.equal(result.summary, '## 会议纪要草稿\n\n### 关键结论\n- 继续推进')
+})
+
+test('summarizeContent sends stored meeting access token to cloud API proxy', async () => {
+  const previousStorage = globalThis.localStorage
+  globalThis.localStorage = fakeStorage({ meeting_access_token: 'meeting-token' })
+  const calls = []
+
+  try {
+    globalThis.fetch = async (url, options) => {
+      calls.push({ url, options })
+      return new Response(JSON.stringify({ summary: 'done' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    }
+
+    const { summarizeContent } = useSummarizer({ baseUrl: '/api' })
+    await summarizeContent('transcript')
+
+    assert.equal(calls[0].url, '/api/summarize')
+    assert.equal(calls[0].options.headers.Authorization, 'Bearer meeting-token')
+  } finally {
+    globalThis.localStorage = previousStorage
+  }
 })
 
 test('summarizeContent rejects empty content before calling API', async () => {
