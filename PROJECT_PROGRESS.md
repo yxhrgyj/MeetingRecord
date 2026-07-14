@@ -36,7 +36,7 @@
 
 ## 1. 当前快照
 
-最后更新：2026-07-14 12:10（Asia/Shanghai）
+最后更新：2026-07-14 13:24（Asia/Shanghai）
 
 ### 1.1 产品结论
 
@@ -87,6 +87,7 @@
 - 已使用系统 Google Chrome 验证 `1440x900`、`1280x800` 和 `390x844`；无横向溢出、无应用控制台错误，桌面助手栏和移动端底部抽屉均进入可视区域。
 - 已将批准的 HTML 概念和实现截图直接对照；截图保存在仓库外的 `C:\Users\Administrator\.codex\qa\meetingrecord-ui`，Playwright 临时 trace/output 写入系统临时目录。
 - 本轮没有执行 Cloudflare 部署；线上 `meeting-assistant-136.pages.dev` 仍是此前部署版本。
+- 后续阅读体验改进已确认采用“会议纪要优先 + 完整转写标签切换”：打开会议默认显示纪要，只有核对细节时才查看完整转写；正式方案见 `docs/superpowers/specs/2026-07-14-summary-transcript-tabs-design.md`，提交为 `a1c0946`，尚未开始实现。
 
 ## 2. 用户目标与产品范围
 
@@ -436,7 +437,7 @@ git -C .\.worktrees\asr-service status --short --branch
 git -C .\.worktrees\asr-service diff --stat
 ```
 
-首个工作目标：继续执行 Phase 1，先保护并逐文件收敛 `App.vue`、云端代理/模型网关和两处工作树的重叠改动，再重新跑完整回归。UI 若要发布，必须由用户单独明确要求部署；当前线上版本尚未包含本轮重设计。
+首个工作目标：先由用户复核 `docs/superpowers/specs/2026-07-14-summary-transcript-tabs-design.md`；确认无修改后，为“会议纪要 / 完整转写”标签切换编写实施计划。继续时必须保护 `App.vue`、云端代理/模型网关和两处工作树的既有未提交改动。UI 若要发布，必须由用户单独明确要求部署；当前线上版本尚未包含本轮重设计。
 
 Phase 1 的最低回归命令：
 
@@ -450,6 +451,7 @@ wsl.exe bash -lc "cd /mnt/e/Objects/MeetingRecord/.worktrees/asr-service/asr-ser
 
 ## 10. 更新日志
 
+- 2026-07-14 13:24：用户确认会议结束后优先阅读整理后的会议纪要，完整语音转写只用于核对细节；批准采用“会议纪要 / 完整转写”分段切换，默认纪要、整理成功后自动回到纪要、重新整理只替换纪要且保留转写。兼容方案继续使用现有 `content` 字段，以规范 Markdown 分区和保守旧数据解析避免数据库迁移。设计已写入 `docs/superpowers/specs/2026-07-14-summary-transcript-tabs-design.md` 并提交为 `a1c0946`；尚未实现、未部署。
 - 2026-07-14 12:10：完成 A“时间地平线”UI 重设计的本地浏览器验收。修复移动端纯图标“新建会议”缺少可访问名称、桌面 1100px 以上助手栏仍被 `translate-x-full` 移出视口的问题；升级开发依赖 Playwright 至 1.61.1 以兼容本机 Node 24，并使用系统 Chrome 跑通 2/2 E2E。最新全量结果为 Node 50/50、UI 28/28、Vite 构建通过、生产依赖 0 漏洞；已检查 `1440x900`、`1280x800`、`390x844` 截图并与批准的 HTML 概念对照。浏览器验收提交为 `0cc9c1c`，本轮未部署。
 - 2026-07-13 20:52：用户复核并确认 UI 重设计正式方案；已按 `superpowers:writing-plans` 写成 10 个独立实施任务，保存到 ASR 工作树的 `docs/superpowers/plans/2026-07-13-meeting-assistant-ui-redesign.md`。计划覆盖 UI 测试基础、视觉令牌、日历、共享会议工作台、文稿区、会议助手、编辑与阅读集成、设置/响应式、Playwright 与截图对照；实现尚未开始，下一步等待选择子任务驱动或当前任务内分批执行。
 - 2026-07-13 20:41：完成 Meeting Assistant UI 重设计讨论并确认正式方向：采用 A“时间地平线”，桌面端保留全宽日历，会议编辑与阅读共用文稿工作台，录音、转写、Qwen3 8B 纪要整理和导出集中到右侧会议助手；组件边界、响应式规则、错误状态和验收标准均已确认。设计方案写入 ASR 工作树的 `docs/superpowers/specs/2026-07-13-meeting-assistant-ui-redesign-design.md`；实现尚未开始，不涉及部署。下一步先由用户复核方案文件，确认后编写实施计划。
