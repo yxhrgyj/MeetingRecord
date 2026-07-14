@@ -8,6 +8,8 @@ import { DOCX_MIME_TYPE, meetingToDocxBlob, monthToDocxBlob } from './functions/
 import { downloadContentDisposition } from './functions/_shared/meetings.js'
 import { finishRecordingPipeline, saveRecordingChunk, startRecordingSession } from './server/localRecording.js'
 import { buildSummarizerOptions, summarizeWithOllama } from './server/ollamaSummarizer.js'
+import { proxyAsrTranscription } from './server/asrProxy.js'
+import { requireAccessToken } from './serverAuth.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -18,6 +20,36 @@ const ASR_BASE_URL = process.env.ASR_BASE_URL || 'http://127.0.0.1:8000'
 
 app.use(cors())
 app.use(express.json())
+app.use('/api', requireAccessToken)
+
+app.get('/health', requireAccessToken, (req, res) => {
+  res.json({
+    ok: true,
+    service: 'meeting-assistant-model',
+    asrBaseUrl: ASR_BASE_URL,
+    summarizerModel: buildSummarizerOptions(process.env).model
+  })
+})
+
+app.post('/transcribe', requireAccessToken, express.raw({ type: '*/*', limit: '200mb' }), async (req, res) => {
+  try {
+    const response = await proxyAsrTranscription({
+      body: Buffer.from(req.body || []),
+      contentType: req.get('Content-Type') || 'application/octet-stream',
+      asrBaseUrl: ASR_BASE_URL
+    })
+    res.status(response.status)
+    response.headers.forEach((value, key) => {
+      res.setHeader(key, value)
+    })
+    res.send(Buffer.from(await response.arrayBuffer()))
+  } catch (error) {
+    console.error('ASR 转写代理失败:', error)
+    res.status(502).json({
+      message: error?.message || 'ASR 服务不可用，请确认本机 ASR 服务已启动'
+    })
+  }
+})
 
 // 生产模式下提供静态文件
 const distPath = path.join(__dirname, 'dist')

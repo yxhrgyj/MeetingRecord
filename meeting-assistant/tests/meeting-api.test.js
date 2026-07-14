@@ -9,9 +9,10 @@ import {
   updateMeeting
 } from '../functions/_shared/meetings.js'
 
-test('authorization is optional when no token is configured', () => {
+test('authorization rejects requests when no token is configured', async () => {
   const response = assertAuthorized(new Request('https://example.test/api/meetings'), {})
-  assert.equal(response, null)
+  assert.equal(response.status, 401)
+  assert.deepEqual(await response.json(), { message: 'Access token is not configured' })
 })
 
 test('authorization rejects missing or wrong bearer token when configured', async () => {

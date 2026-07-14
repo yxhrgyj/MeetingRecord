@@ -3,6 +3,21 @@ import assert from 'node:assert/strict'
 
 import { resolveLocalAgentBaseUrl, useLocalRecording } from '../src/composables/useLocalRecording.js'
 
+function fakeStorage(values = {}) {
+  const store = new Map(Object.entries(values))
+  return {
+    getItem(key) {
+      return store.get(key) || ''
+    },
+    setItem(key, value) {
+      store.set(key, String(value))
+    },
+    removeItem(key) {
+      store.delete(key)
+    }
+  }
+}
+
 test('resolveLocalAgentBaseUrl uses same origin when served by the local agent', () => {
   assert.equal(
     resolveLocalAgentBaseUrl({
@@ -13,11 +28,21 @@ test('resolveLocalAgentBaseUrl uses same origin when served by the local agent',
   )
 })
 
-test('resolveLocalAgentBaseUrl defaults to localhost for cloud or vite pages', () => {
+test('resolveLocalAgentBaseUrl uses cloud API proxy on deployed pages', () => {
   assert.equal(
     resolveLocalAgentBaseUrl({
       env: {},
       location: { origin: 'https://meeting-assistant-136.pages.dev', port: '' }
+    }),
+    '/api'
+  )
+})
+
+test('resolveLocalAgentBaseUrl defaults to localhost for vite pages', () => {
+  assert.equal(
+    resolveLocalAgentBaseUrl({
+      env: {},
+      location: { origin: 'http://127.0.0.1:5173', hostname: '127.0.0.1', port: '5173' }
     }),
     'http://127.0.0.1:3001/api'
   )
@@ -40,6 +65,32 @@ test('useLocalRecording calls local agent health endpoint', async () => {
 
   assert.equal(calls[0].url, 'http://local.test/api/local/health')
   assert.equal(result.ok, true)
+})
+
+test('useLocalRecording sends stored meeting access token to cloud API proxy', async () => {
+  const previousStorage = globalThis.localStorage
+  globalThis.localStorage = fakeStorage({ meeting_access_token: 'meeting-token' })
+  const calls = []
+
+  try {
+    const client = useLocalRecording({
+      baseUrl: '/api',
+      fetchImpl: async (url, options) => {
+        calls.push({ url, options })
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        })
+      }
+    })
+
+    await client.checkHealth()
+
+    assert.equal(calls[0].url, '/api/local/health')
+    assert.equal(calls[0].options.headers.Authorization, 'Bearer meeting-token')
+  } finally {
+    globalThis.localStorage = previousStorage
+  }
 })
 
 test('useLocalRecording uploads raw recording chunks and finishes pipeline', async () => {

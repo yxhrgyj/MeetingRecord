@@ -11,3 +11,9 @@ CREATE TABLE IF NOT EXISTS meetings (
 );
 
 CREATE INDEX IF NOT EXISTS idx_meetings_date ON meetings(date, startTime);
+
+CREATE TABLE IF NOT EXISTS app_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL DEFAULT '',
+  updatedAt TEXT NOT NULL
+);

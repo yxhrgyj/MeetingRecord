@@ -1,3 +1,5 @@
+import { fetchWithAuth } from './useAuthToken.js'
+
 const DEFAULT_SUMMARIZER_BASE_URL = '/api'
 
 function getDefaultBaseUrl() {
@@ -24,6 +26,7 @@ export function mergeSummaryIntoContent(content, summary) {
 
 export function useSummarizer(options = {}) {
   const baseUrl = (options.baseUrl || getDefaultBaseUrl()).replace(/\/$/, '')
+  const fetchImpl = options.fetchImpl || globalThis.fetch
 
   async function summarizeContent(content) {
     const normalizedContent = String(content || '').trim()
@@ -31,11 +34,11 @@ export function useSummarizer(options = {}) {
       throw new Error('没有可整理的转写内容')
     }
 
-    const response = await fetch(`${baseUrl}/summarize`, {
+    const response = await fetchWithAuth(`${baseUrl}/summarize`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content: normalizedContent })
-    })
+    }, fetchImpl)
 
     if (!response.ok) {
       throw new Error(await readError(response))

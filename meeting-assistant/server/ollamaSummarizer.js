@@ -1,5 +1,5 @@
 const DEFAULT_OLLAMA_BASE_URL = 'http://127.0.0.1:11434'
-const DEFAULT_OLLAMA_MODEL = 'qwen3:4b'
+const DEFAULT_OLLAMA_MODEL = 'qwen3:8b'
 const DEFAULT_OLLAMA_KEEP_ALIVE = '0s'
 
 export function buildSummarizerOptions(env = {}) {

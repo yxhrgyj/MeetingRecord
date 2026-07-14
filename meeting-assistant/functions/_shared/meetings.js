@@ -3,7 +3,12 @@ const MONTH_RE = /^\d{4}-\d{2}$/
 
 export function assertAuthorized(request, env = {}) {
   const expected = String(env.MEETING_ACCESS_TOKEN || '').trim()
-  if (!expected) return null
+  if (!expected) {
+    return Response.json({ message: 'Access token is not configured' }, {
+      status: 401,
+      headers: { 'WWW-Authenticate': 'Bearer' }
+    })
+  }
 
   const header = request.headers.get('Authorization') || ''
   const actual = header.startsWith('Bearer ') ? header.slice(7).trim() : ''

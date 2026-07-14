@@ -1,7 +1,42 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { formatTranscriptForEditor, useAsr } from '../src/composables/useAsr.js'
+import { formatTranscriptForEditor, resolveAsrBaseUrl, useAsr } from '../src/composables/useAsr.js'
+
+function fakeStorage(values = {}) {
+  const store = new Map(Object.entries(values))
+  return {
+    getItem(key) {
+      return store.get(key) || ''
+    },
+    setItem(key, value) {
+      store.set(key, String(value))
+    },
+    removeItem(key) {
+      store.delete(key)
+    }
+  }
+}
+
+test('resolveAsrBaseUrl uses cloud API proxy on deployed pages', () => {
+  assert.equal(
+    resolveAsrBaseUrl({
+      env: {},
+      location: { origin: 'https://meeting-assistant-136.pages.dev', port: '' }
+    }),
+    '/api/asr'
+  )
+})
+
+test('resolveAsrBaseUrl defaults to local ASR for vite pages', () => {
+  assert.equal(
+    resolveAsrBaseUrl({
+      env: {},
+      location: { origin: 'http://127.0.0.1:5173', hostname: '127.0.0.1', port: '5173' }
+    }),
+    'http://127.0.0.1:8000'
+  )
+})
 
 test('transcribeAudio posts audio file to local ASR service', async () => {
   const calls = []
@@ -20,6 +55,30 @@ test('transcribeAudio posts audio file to local ASR service', async () => {
   assert.equal(calls[0].options.method, 'POST')
   assert.ok(calls[0].options.body instanceof FormData)
   assert.deepEqual(result, { text: 'recognized', language: 'zh-CN', durationSeconds: 1.2 })
+})
+
+test('transcribeAudio sends stored meeting access token to cloud API proxy', async () => {
+  const previousStorage = globalThis.localStorage
+  globalThis.localStorage = fakeStorage({ meeting_access_token: 'meeting-token' })
+  const calls = []
+
+  try {
+    globalThis.fetch = async (url, options) => {
+      calls.push({ url, options })
+      return new Response(JSON.stringify({ text: 'recognized' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    }
+
+    const { transcribeAudio } = useAsr({ baseUrl: '/api/asr' })
+    await transcribeAudio(new File(['audio'], 'sample.mp3', { type: 'audio/mpeg' }))
+
+    assert.equal(calls[0].url, '/api/asr/transcribe')
+    assert.equal(calls[0].options.headers?.Authorization, 'Bearer meeting-token')
+  } finally {
+    globalThis.localStorage = previousStorage
+  }
 })
 
 test('transcribeAudio surfaces ASR error detail', async () => {
