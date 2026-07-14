@@ -3,8 +3,13 @@ import { computed, reactive, ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { useApi } from '@/composables/useApi.js'
 import { formatTranscriptForEditor, useAsr } from '@/composables/useAsr.js'
 import { useLocalRecording } from '@/composables/useLocalRecording.js'
-import { mergeSummaryIntoContent, useSummarizer } from '@/composables/useSummarizer.js'
+import { useSummarizer } from '@/composables/useSummarizer.js'
 import { useDateUtils } from '@/composables/useDateUtils.js'
+import {
+  normalizeMeetingSummary,
+  parseMeetingContent,
+  serializeMeetingContent
+} from '@/domain/meetingContent.js'
 import MeetingAssistant from '@/components/MeetingAssistant.vue'
 import MeetingDocument from '@/components/MeetingDocument.vue'
 import MeetingEditorToolbar from '@/components/MeetingEditorToolbar.vue'
@@ -27,12 +32,14 @@ const form = reactive({
   startTime: '',
   endTime: '',
   attendees: [],
-  content: ''
+  summary: '',
+  transcript: ''
 })
 
 const documentRef = ref(null)
 const audioInputRef = ref(null)
 const assistantOpen = ref(false)
+const activeSection = ref('summary')
 const isTranscribing = ref(false)
 const isSummarizing = ref(false)
 const isRecording = ref(false)
@@ -64,7 +71,9 @@ function initForm() {
     form.startTime = props.initialData.startTime || ''
     form.endTime = props.initialData.endTime || ''
     form.attendees = [...(props.initialData.attendees || [])]
-    form.content = props.initialData.content || ''
+    const sections = parseMeetingContent(props.initialData.content)
+    form.summary = sections.summary
+    form.transcript = sections.transcript
   }
 }
 
@@ -79,6 +88,22 @@ function removeAttendee(i) { form.attendees.splice(i, 1) }
 
 function applyFormUpdate(nextForm) {
   Object.assign(form, nextForm)
+}
+
+const activeContent = computed({
+  get: () => form[activeSection.value],
+  set: value => {
+    form[activeSection.value] = value
+  }
+})
+
+function buildMeetingPayload() {
+  const { summary, transcript, ...metadata } = form
+  return {
+    ...metadata,
+    attendees: [...form.attendees],
+    content: serializeMeetingContent({ summary, transcript })
+  }
 }
 
 function getContentElement() {
@@ -101,9 +126,9 @@ function insertAtCursor(before, after = '') {
   if (!el) return
   const start = el.selectionStart
   const end = el.selectionEnd
-  const selected = form.content.substring(start, end)
+  const selected = activeContent.value.substring(start, end)
   const replacement = before + selected + after
-  form.content = form.content.substring(0, start) + replacement + form.content.substring(end)
+  activeContent.value = activeContent.value.substring(0, start) + replacement + activeContent.value.substring(end)
   nextTick(() => {
     el.focus()
     const pos = start + before.length + selected.length + after.length
@@ -116,7 +141,7 @@ function replaceAtCursor(text) {
   if (!el) return
   const start = el.selectionStart
   const end = el.selectionEnd
-  form.content = form.content.substring(0, start) + text + form.content.substring(end)
+  activeContent.value = activeContent.value.substring(0, start) + text + activeContent.value.substring(end)
   nextTick(() => {
     el.focus()
     const pos = start + text.length
@@ -197,8 +222,9 @@ async function handleAudioSelected(event) {
       asrStatus.value = 'ASR 未识别到文本'
       return
     }
-    const prefix = form.content.trim() ? '\n\n' : ''
-    replaceAtCursor(`${prefix}${transcript}`)
+    const prefix = form.transcript.trim() ? '\n\n' : ''
+    form.transcript = `${form.transcript.trimEnd()}${prefix}${transcript}`
+    activeSection.value = 'transcript'
     asrStatus.value = 'ASR 已插入'
     setTimeout(() => {
       if (asrStatus.value === 'ASR 已插入') asrStatus.value = ''
@@ -253,20 +279,18 @@ function stopRecordingTracks() {
 
 function appendRecordingResult(result) {
   const transcript = formatTranscriptForEditor(result.asr)
-  let nextContent = form.content.trimEnd()
   if (transcript) {
-    nextContent = nextContent ? `${nextContent}\n\n${transcript}` : transcript
+    form.transcript = form.transcript.trim()
+      ? `${form.transcript.trimEnd()}\n\n${transcript}`
+      : transcript
   }
   if (result.summary) {
-    nextContent = mergeSummaryIntoContent(nextContent, result.summary)
+    form.summary = normalizeMeetingSummary(result.summary)
+    activeSection.value = 'summary'
+  } else if (transcript) {
+    activeSection.value = 'transcript'
   }
-  form.content = nextContent
-  nextTick(() => {
-    const contentElement = getContentElement()
-    contentElement?.focus()
-    const end = form.content.length
-    contentElement?.setSelectionRange(end, end)
-  })
+  nextTick(() => documentRef.value?.scrollToSectionTop?.())
 }
 
 async function startMeetingRecording() {
@@ -358,10 +382,10 @@ async function finishMeetingRecording() {
 // ===== LLM 会议纪要整理 =====
 async function handleSummarize() {
   if (isSummarizing.value) return
-  if (!form.content.trim()) {
-    summaryStatus.value = '没有可整理的内容'
+  if (!form.transcript.trim()) {
+    summaryStatus.value = '没有可整理的完整转写'
     setTimeout(() => {
-      if (summaryStatus.value === '没有可整理的内容') summaryStatus.value = ''
+      if (summaryStatus.value === '没有可整理的完整转写') summaryStatus.value = ''
     }, 3000)
     return
   }
@@ -369,15 +393,11 @@ async function handleSummarize() {
   isSummarizing.value = true
   summaryStatus.value = '纪要整理中...'
   try {
-    const result = await summarizer.summarizeContent(form.content)
-    form.content = mergeSummaryIntoContent(form.content, result.summary)
+    const result = await summarizer.summarizeContent(form.transcript)
+    form.summary = normalizeMeetingSummary(result.summary)
+    activeSection.value = 'summary'
     summaryStatus.value = '纪要已生成'
-    nextTick(() => {
-      const contentElement = getContentElement()
-      contentElement?.focus()
-      const end = form.content.length
-      contentElement?.setSelectionRange(end, end)
-    })
+    nextTick(() => documentRef.value?.scrollToSectionTop?.())
     setTimeout(() => {
       if (summaryStatus.value === '纪要已生成') summaryStatus.value = ''
     }, 3000)
@@ -403,12 +423,12 @@ function stopAutoSave() {
 
 async function doAutoSave() {
   // 没有任何实质内容时不保存
-  if (!form.title.trim() && !form.content.trim()) return
+  if (!form.title.trim() && !form.summary.trim() && !form.transcript.trim()) return
 
   const prevLabel = autoSaveLabel.value
   autoSaveLabel.value = '保存中…'
   try {
-    const payload = { ...form, attendees: [...form.attendees] }
+    const payload = buildMeetingPayload()
     if (form.id) {
       await api.updateMeeting(form.id, payload)
     } else {
@@ -435,12 +455,12 @@ function handleSubmit() {
     alert('请输入会议标题')
     return
   }
-  emit('save', { ...form, attendees: [...form.attendees] })
+  emit('save', buildMeetingPayload())
 }
 
 function handleExport(format = 'docx') {
   if (!form.id) return
-  emit('export', { ...form, attendees: [...form.attendees] }, format)
+  emit('export', buildMeetingPayload(), format)
 }
 
 function handleRetry(kind) {
@@ -489,8 +509,8 @@ function handleEnterKey(e) {
   if (!el) return
 
   const pos = el.selectionStart
-  const beforeCursor = form.content.substring(0, pos)
-  const afterCursor = form.content.substring(pos)
+  const beforeCursor = activeContent.value.substring(0, pos)
+  const afterCursor = activeContent.value.substring(pos)
   const lastNewline = beforeCursor.lastIndexOf('\n')
   const line = beforeCursor.substring(lastNewline + 1)
 
@@ -508,7 +528,7 @@ function handleEnterKey(e) {
     e.preventDefault()
     const next = parseInt(numMatch[1]) + 1
     const renumbered = renumberAfter(afterCursor, next + 1)
-    form.content = beforeCursor + '\n' + next + '. ' + renumbered
+    activeContent.value = beforeCursor + '\n' + next + '. ' + renumbered
     nextTick(() => {
       el.focus()
       // pos + 1(\n) + next.length + 2(". ") = 新编号行末尾
@@ -518,7 +538,7 @@ function handleEnterKey(e) {
   }
   if (emptyNumMatch) {
     e.preventDefault()
-    form.content = beforeCursor.substring(0, lastNewline + 1) + afterCursor
+    activeContent.value = beforeCursor.substring(0, lastNewline + 1) + afterCursor
     nextTick(() => {
       el.focus()
       el.setSelectionRange(lastNewline + 1, lastNewline + 1)
@@ -527,7 +547,7 @@ function handleEnterKey(e) {
   }
   if (chkMatch) {
     e.preventDefault()
-    form.content = beforeCursor + '\n- [ ] ' + afterCursor
+    activeContent.value = beforeCursor + '\n- [ ] ' + afterCursor
     nextTick(() => {
       el.focus()
       el.setSelectionRange(pos + 7, pos + 7)
@@ -536,7 +556,7 @@ function handleEnterKey(e) {
   }
   if (emptyChkMatch) {
     e.preventDefault()
-    form.content = beforeCursor.substring(0, lastNewline + 1) + afterCursor
+    activeContent.value = beforeCursor.substring(0, lastNewline + 1) + afterCursor
     nextTick(() => {
       el.focus()
       el.setSelectionRange(lastNewline + 1, lastNewline + 1)
@@ -545,7 +565,7 @@ function handleEnterKey(e) {
   }
   if (bulMatch) {
     e.preventDefault()
-    form.content = beforeCursor + '\n- ' + afterCursor
+    activeContent.value = beforeCursor + '\n- ' + afterCursor
     nextTick(() => {
       el.focus()
       el.setSelectionRange(pos + 3, pos + 3)
@@ -554,7 +574,7 @@ function handleEnterKey(e) {
   }
   if (emptyBulMatch) {
     e.preventDefault()
-    form.content = beforeCursor.substring(0, lastNewline + 1) + afterCursor
+    activeContent.value = beforeCursor.substring(0, lastNewline + 1) + afterCursor
     nextTick(() => {
       el.focus()
       el.setSelectionRange(lastNewline + 1, lastNewline + 1)
@@ -571,17 +591,17 @@ function handleEnterKey(e) {
   e.preventDefault()
   if (ancestor.type === 'number') {
     const renumbered = renumberAfter(afterCursor, ancestor.next + 1)
-    form.content = beforeCursor + '\n' + ancestor.next + '. ' + renumbered
+    activeContent.value = beforeCursor + '\n' + ancestor.next + '. ' + renumbered
     nextTick(() => {
       el.focus()
       // pos + 1(\n) + next.length + 2(". ") = 新编号行末尾
       el.setSelectionRange(pos + 1 + String(ancestor.next).length + 2, pos + 1 + String(ancestor.next).length + 2)
     })
   } else if (ancestor.type === 'checkbox') {
-    form.content = beforeCursor + '\n- [ ] ' + afterCursor
+    activeContent.value = beforeCursor + '\n- [ ] ' + afterCursor
     nextTick(() => { el.focus(); el.setSelectionRange(pos + 7, pos + 7) })
   } else if (ancestor.type === 'bullet') {
-    form.content = beforeCursor + '\n- ' + afterCursor
+    activeContent.value = beforeCursor + '\n- ' + afterCursor
     nextTick(() => { el.focus(); el.setSelectionRange(pos + 3, pos + 3) })
   }
 }
@@ -605,7 +625,7 @@ function onKeydown(e) {
       const el = getContentElement()
       if (!el) return
       const pos = el.selectionStart
-      const before = form.content.substring(0, pos)
+      const before = activeContent.value.substring(0, pos)
       const lastNL = before.lastIndexOf('\n')
       const curLine = before.substring(lastNL + 1)
 
@@ -623,7 +643,7 @@ function onKeydown(e) {
         else if (bm) indent = ' '.repeat(bm[1].length)
       }
 
-      form.content = before + '\n' + indent + form.content.substring(pos)
+      activeContent.value = before + '\n' + indent + activeContent.value.substring(pos)
       nextTick(() => {
         el.focus()
         el.setSelectionRange(pos + 1 + indent.length, pos + 1 + indent.length)
@@ -666,7 +686,10 @@ onUnmounted(() => {
         ref="documentRef"
         :model-value="form"
         mode="edit"
+        :active-section="activeSection"
         @update:model-value="applyFormUpdate"
+        @update:active-section="activeSection = $event"
+        @organize="handleSummarize"
         @add-attendee="addAttendee"
         @remove-attendee="removeAttendee"
         @content-keydown="onKeydown"
@@ -687,7 +710,7 @@ onUnmounted(() => {
         :recording-status="recordingStatus"
         :asr-status="asrStatus"
         :summary-status="summaryStatus"
-        :has-content="Boolean(form.content.trim())"
+        :has-content="Boolean(form.transcript.trim())"
         :can-export="Boolean(form.id)"
         :retry-kind="retryKind"
         @record-toggle="isRecording ? stopMeetingRecording() : startMeetingRecording()"

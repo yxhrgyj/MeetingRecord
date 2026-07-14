@@ -61,7 +61,7 @@ function patchActiveContent(value) {
 }
 
 function scrollToSectionTop() {
-  sectionTopRef.value?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+  sectionTopRef.value?.scrollIntoView?.({ block: 'start', behavior: 'smooth' })
 }
 
 defineExpose({ focusContent, getContentElement, scrollToSectionTop })

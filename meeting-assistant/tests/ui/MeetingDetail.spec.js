@@ -9,19 +9,31 @@ const meeting = {
   startTime: '09:30',
   endTime: '11:00',
   attendees: ['李明', '王瑜'],
-  content: '## 会议决定\n\n统一使用 Qwen3 8B。',
+  content: [
+    '## 会议纪要',
+    '',
+    '### 会议决定',
+    '统一使用 Qwen3 8B。',
+    '',
+    '---',
+    '',
+    '## 完整转写',
+    '',
+    '[00:00-00:30] 讨论模型选择。'
+  ].join('\n'),
   createdAt: '2026-07-13T01:20:00.000Z',
   updatedAt: '2026-07-13T03:04:00.000Z'
 }
 
 describe('MeetingDetail', () => {
-  it('renders the saved meeting in the shared read workspace', () => {
+  it('shows minutes first and reveals transcript on demand', async () => {
     const wrapper = mount(MeetingDetail, { props: { meeting } })
 
-    expect(wrapper.get('[data-region="document"]').text()).toContain('第三季度产品规划会')
     expect(wrapper.get('[data-content="summary"]').text()).toContain('统一使用 Qwen3 8B')
-    expect(wrapper.get('[data-region="assistant"]').text()).toContain('已整理')
-    expect(wrapper.text()).toContain('李明')
+    expect(wrapper.find('[data-content="transcript"]').exists()).toBe(false)
+
+    await wrapper.get('[data-section="transcript"]').trigger('click')
+    expect(wrapper.get('[data-content="transcript"]').text()).toContain('讨论模型选择')
   })
 
   it('forwards navigation, edit, export, and delete commands', async () => {

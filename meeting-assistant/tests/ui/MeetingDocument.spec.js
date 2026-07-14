@@ -116,6 +116,14 @@ describe('MeetingDocument', () => {
 
     expect(wrapper.get('[data-action="organize-empty"]').attributes('disabled')).toBeDefined()
   })
+
+  it('does not fail when smooth scrolling is unavailable', () => {
+    const wrapper = mount(MeetingDocument, {
+      props: { modelValue: meeting, mode: 'edit', activeSection: 'summary' }
+    })
+
+    expect(() => wrapper.vm.scrollToSectionTop()).not.toThrow()
+  })
 })
 
 describe('MeetingEditorToolbar', () => {

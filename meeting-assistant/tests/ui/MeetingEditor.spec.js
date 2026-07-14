@@ -36,8 +36,7 @@ vi.mock('@/composables/useLocalRecording.js', () => ({
 }))
 
 vi.mock('@/composables/useSummarizer.js', () => ({
-  useSummarizer: () => ({ summarizeContent: clients.summarizeContent }),
-  mergeSummaryIntoContent: (content, summary) => `${content}\n\n## AI 纪要草稿\n\n${summary}`
+  useSummarizer: () => ({ summarizeContent: clients.summarizeContent })
 }))
 
 const initialData = {
@@ -47,7 +46,17 @@ const initialData = {
   startTime: '09:30',
   endTime: '10:30',
   attendees: [],
-  content: '原始内容'
+  content: [
+    '## 会议纪要',
+    '',
+    '原始纪要',
+    '',
+    '---',
+    '',
+    '## 完整转写',
+    '',
+    '原始转写内容'
+  ].join('\n')
 }
 
 describe('MeetingEditor integration', () => {
@@ -72,19 +81,23 @@ describe('MeetingEditor integration', () => {
       attendees: []
     })
     expect(wrapper.emitted('save')[0][0]).not.toBe(initialData)
+    const saved = wrapper.emitted('save')[0][0]
+    expect(saved.content).toContain('## 会议纪要')
+    expect(saved.content).toContain('## 完整转写')
+    expect(saved).not.toHaveProperty('summary')
+    expect(saved).not.toHaveProperty('transcript')
 
     wrapper.unmount()
   })
 
-  it('preserves Markdown, ASR upload, and AI summary behavior', async () => {
+  it('keeps transcript and minutes separate across ASR and summarization', async () => {
     const wrapper = mount(MeetingEditor, { props: { initialData } })
     await nextTick()
-    const textarea = wrapper.get('[data-field="summary"]')
-    textarea.element.setSelectionRange(0, 4)
 
-    await wrapper.get('[data-command="bold"]').trigger('click')
-    await nextTick()
-    expect(wrapper.get('[data-field="summary"]').element.value).toContain('**原始内容**')
+    expect(wrapper.get('[data-section="summary"]').attributes('aria-selected')).toBe('true')
+    expect(wrapper.get('[data-field="summary"]').element.value).toContain('原始纪要')
+
+    await wrapper.get('[data-section="transcript"]').trigger('click')
 
     const fileInput = wrapper.get('input[type="file"]')
     const audio = new File(['audio'], 'meeting.wav', { type: 'audio/wav' })
@@ -93,13 +106,18 @@ describe('MeetingEditor integration', () => {
     await flushPromises()
 
     expect(clients.transcribeAudio).toHaveBeenCalledWith(audio)
-    expect(wrapper.get('[data-field="summary"]').element.value).toContain('转写结果')
+    expect(wrapper.get('[data-field="transcript"]').element.value).toContain('转写结果')
 
     await wrapper.get('[data-action="summarize"]').trigger('click')
     await flushPromises()
 
-    expect(clients.summarizeContent).toHaveBeenCalled()
+    expect(clients.summarizeContent).toHaveBeenCalledWith(expect.stringContaining('原始转写内容'))
+    expect(clients.summarizeContent.mock.calls[0][0]).not.toContain('原始纪要')
+    expect(wrapper.get('[data-section="summary"]').attributes('aria-selected')).toBe('true')
     expect(wrapper.get('[data-field="summary"]').element.value).toContain('确认三项行动')
+
+    await wrapper.get('[data-section="transcript"]').trigger('click')
+    expect(wrapper.get('[data-field="transcript"]').element.value).toContain('转写结果')
 
     wrapper.unmount()
   })

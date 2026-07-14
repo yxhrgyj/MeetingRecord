@@ -1,9 +1,10 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import MeetingDocument from '@/components/MeetingDocument.vue'
 import MeetingInfoPanel from '@/components/MeetingInfoPanel.vue'
 import MeetingWorkspace from '@/components/MeetingWorkspace.vue'
 import MeetingWorkspaceHeader from '@/components/MeetingWorkspaceHeader.vue'
+import { parseMeetingContent } from '@/domain/meetingContent.js'
 
 const props = defineProps({
   meeting: { type: Object, required: true }
@@ -11,6 +12,11 @@ const props = defineProps({
 
 const emit = defineEmits(['edit', 'delete', 'export', 'close'])
 const assistantOpen = ref(false)
+const activeSection = ref('summary')
+const documentMeeting = computed(() => ({
+  ...props.meeting,
+  ...parseMeetingContent(props.meeting.content)
+}))
 
 function exportMeeting(format) {
   emit('export', props.meeting, format)
@@ -36,7 +42,12 @@ function exportMeeting(format) {
     </template>
 
     <template #document>
-      <MeetingDocument :model-value="meeting" mode="read" />
+      <MeetingDocument
+        :model-value="documentMeeting"
+        mode="read"
+        :active-section="activeSection"
+        @update:active-section="activeSection = $event"
+      />
     </template>
 
     <template #assistant>
