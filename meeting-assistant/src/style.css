@@ -9,7 +9,7 @@
   }
 
   body {
-    @apply min-h-screen;
+    @apply min-h-screen bg-canvas text-ink;
   }
 
   ::-webkit-scrollbar {
@@ -22,46 +22,76 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    @apply bg-slate-300 rounded-full hover:bg-slate-400;
+    @apply bg-line rounded-full hover:bg-muted;
   }
 }
 
 @layer components {
+  .focus-ring {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/35 focus-visible:ring-offset-1;
+  }
+
+  .icon-button {
+    @apply focus-ring inline-flex size-8 items-center justify-center rounded-control text-secondary
+           hover:bg-black/[0.045] hover:text-ink active:bg-black/[0.075]
+           transition-colors duration-150;
+  }
+
+  .command-button {
+    @apply focus-ring inline-flex min-h-8 items-center justify-center gap-1.5 rounded-control px-3
+           text-xs font-medium text-secondary bg-surface border border-line
+           hover:bg-canvas hover:text-ink active:bg-line/60
+           disabled:pointer-events-none disabled:opacity-45 transition-colors duration-150;
+  }
+
+  .document-surface {
+    @apply bg-surface border border-black/[0.08] rounded-panel shadow-document;
+  }
+
   .btn-primary {
     @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium
-           text-white bg-primary-600 rounded-lg
-           hover:bg-primary-700 active:bg-primary-800
-           transition-all duration-150 ease-out
-           focus:outline-none focus:ring-2 focus:ring-primary-500/40;
+           text-white bg-primary-500 rounded-panel
+           hover:bg-primary-600 active:bg-primary-700
+           transition-colors duration-150 ease-out focus-ring;
   }
 
   .btn-secondary {
     @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium
-           text-slate-700 bg-white border border-slate-300 rounded-lg
-           hover:bg-slate-50 active:bg-slate-100
-           transition-all duration-150 ease-out
-           focus:outline-none focus:ring-2 focus:ring-primary-500/40;
+           text-secondary bg-surface border border-line rounded-panel
+           hover:bg-canvas hover:text-ink active:bg-line/60
+           transition-colors duration-150 ease-out focus-ring;
   }
 
   .btn-ghost {
     @apply inline-flex items-center justify-center gap-1.5 p-2 text-sm
-           text-slate-500 rounded-lg
-           hover:text-slate-700 hover:bg-slate-100
-           transition-all duration-150 ease-out;
+           text-secondary rounded-panel
+           hover:text-ink hover:bg-black/[0.045]
+           transition-colors duration-150 ease-out focus-ring;
   }
 
   .card {
-    @apply bg-white rounded-xl border border-slate-200/80 shadow-sm;
+    @apply bg-surface rounded-panel border border-line shadow-sm;
   }
 
   .input-field {
-    @apply w-full px-3.5 py-2.5 text-sm text-slate-800 bg-white border border-slate-300
-           rounded-lg placeholder-slate-400
+    @apply w-full px-3.5 py-2.5 text-sm text-ink bg-surface border border-line
+           rounded-panel placeholder-muted
            focus:outline-none focus:ring-2 focus:ring-primary-500/30 focus:border-primary-400
            transition-all duration-150 ease-out;
   }
 
   .label-text {
-    @apply block text-xs font-medium text-slate-500 uppercase tracking-wider mb-1.5;
+    @apply block text-xs font-medium text-secondary mb-1.5;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
   }
 }
