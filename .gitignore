@@ -1,1 +1,9 @@
 .worktrees/
+.venv-asr/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+meeting-assistant/recordings/
+meeting-assistant/docx-qa/
+meeting-assistant/.local-runtime/
+meeting-assistant/logs/

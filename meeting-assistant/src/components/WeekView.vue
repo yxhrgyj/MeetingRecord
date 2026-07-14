@@ -26,15 +26,15 @@ function heightPx(meeting) {
 </script>
 
 <template>
-  <div class="card h-full flex flex-col overflow-hidden">
+  <div class="h-full flex flex-col overflow-hidden rounded-panel border border-line bg-surface">
     <!-- 星期头 -->
-    <div class="grid border-b border-slate-100 flex-shrink-0" :style="GRID_STYLE">
+    <div class="grid border-b border-line flex-shrink-0" :style="GRID_STYLE">
       <div class="py-3"></div>
-      <div v-for="(day, i) in weekDays" :key="i" class="py-3 text-center border-l border-slate-50">
-        <div class="text-[10px] text-slate-400 mb-0.5">{{ dt.WEEKDAY_NAMES[i] }}</div>
+      <div v-for="(day, i) in weekDays" :key="i" class="py-3 text-center border-l border-line">
+        <div class="text-[10px] text-muted mb-0.5">{{ dt.WEEKDAY_NAMES[i] }}</div>
         <div
           class="inline-flex items-center justify-center w-8 h-8 text-sm rounded-full"
-          :class="dt.isToday(day) ? 'bg-primary-600 text-white font-semibold' : 'text-slate-700'"
+          :class="dt.isToday(day) ? 'bg-recording text-white font-semibold' : 'text-ink'"
         >{{ day.getDate() }}</div>
       </div>
     </div>
@@ -46,13 +46,13 @@ function heightPx(meeting) {
         :style="GRID_STYLE + '; height: 1440px; min-height: 1440px'"
       >
         <!-- 时间标签列 -->
-        <div class="relative border-r border-slate-50">
+        <div class="relative border-r border-line">
           <div
             v-for="h in 24" :key="'label-' + h"
             class="absolute right-2 w-full text-right"
             :style="{ top: (h - 1) * 60 + 'px', height: '60px' }"
           >
-            <span class="text-[10px] text-slate-400 relative -top-2">
+            <span class="text-[10px] text-muted relative -top-2">
               {{ String(h - 1).padStart(2, '0') }}:00
             </span>
           </div>
@@ -62,12 +62,13 @@ function heightPx(meeting) {
         <div
           v-for="(day, di) in weekDays"
           :key="'col-' + di"
-          class="relative border-l border-slate-50"
+          class="relative border-l border-line"
         >
           <!-- 时间槽（可点击） -->
           <div
             v-for="h in 24" :key="'slot-' + h"
-            class="absolute left-0 right-0 border-b border-slate-50/50 hover:bg-slate-50/30 cursor-pointer transition-colors"
+            :data-time-slot="String(h - 1).padStart(2, '0') + ':00'"
+            class="absolute left-0 right-0 border-b border-line/60 hover:bg-canvas/60 cursor-pointer transition-colors"
             :style="{ top: (h - 1) * 60 + 'px', height: '60px' }"
             @click="emit('selectDate', dt.formatDate(day))"
           ></div>
@@ -76,15 +77,16 @@ function heightPx(meeting) {
           <div
             v-for="m in (props.meetingsByDate[dt.formatDate(day)] || [])"
             :key="m.id"
+            :data-meeting-id="m.id"
             @click="emit('selectMeeting', m)"
-            class="absolute left-0.5 right-0.5 px-1.5 py-0.5 rounded-md text-[10px] leading-tight
-                   bg-primary-100 text-primary-700 border border-primary-200
-                   hover:bg-primary-200 cursor-pointer overflow-hidden
+            class="absolute left-1 right-1 px-2 py-1 rounded-control text-[10px] leading-tight
+                   bg-primary-50 text-primary-700 border border-primary-100
+                   hover:bg-primary-100 cursor-pointer overflow-hidden
                    transition-colors duration-100 z-10"
             :style="{ top: topPx(m) + 'px', height: heightPx(m) + 'px', minHeight: '24px' }"
           >
             <div class="font-medium truncate">{{ m.title }}</div>
-            <div class="text-primary-400">{{ m.startTime }}-{{ m.endTime }}</div>
+            <div class="text-primary-500">{{ m.startTime }}-{{ m.endTime }}</div>
           </div>
         </div>
       </div>

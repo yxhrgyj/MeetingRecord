@@ -114,11 +114,11 @@ async function handleDelete(id) {
 
 async function handleExport(meeting) {
   try {
-    const blob = await api.exportMeeting(meeting.id)
+    const blob = await api.exportMeeting(meeting.id, 'docx')
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `会议纪要-${meeting.title}-${meeting.date}.md`
+    a.download = `会议纪要-${meeting.title}-${meeting.date}.docx`
     a.click()
     URL.revokeObjectURL(url)
   } catch (e) {
@@ -128,11 +128,11 @@ async function handleExport(meeting) {
 
 async function handleExportMonth() {
   try {
-    const blob = await api.exportMonth(currentDate.value.getFullYear(), currentDate.value.getMonth() + 1)
+    const blob = await api.exportMonth(currentDate.value.getFullYear(), currentDate.value.getMonth() + 1, 'docx')
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `会议纪要月报-${currentDate.value.getFullYear()}年${currentDate.value.getMonth() + 1}月.md`
+    a.download = `会议纪要月报-${currentDate.value.getFullYear()}年${currentDate.value.getMonth() + 1}月.docx`
     a.click()
     URL.revokeObjectURL(url)
   } catch (e) {
