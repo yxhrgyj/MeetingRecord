@@ -27,14 +27,14 @@ const meetingsByDate = computed(() => {
 </script>
 
 <template>
-  <div class="h-full">
+  <div class="h-full min-h-0">
     <div v-if="loading" class="flex items-center justify-center h-64">
-      <div class="flex items-center gap-2 text-sm text-slate-400">
+      <div class="flex items-center gap-2 text-sm text-muted" role="status">
         <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
           <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
           <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
         </svg>
-        加载中...
+        正在加载会议…
       </div>
     </div>
 
