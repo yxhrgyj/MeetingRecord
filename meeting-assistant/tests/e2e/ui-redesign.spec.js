@@ -9,7 +9,19 @@ const seedMeeting = {
   startTime: '09:30',
   endTime: '10:30',
   attendees: ['李明', '王瑜'],
-  content: '## 会议决定\n\n确认第三季度优先事项。',
+  content: [
+    '## 会议纪要',
+    '',
+    '### 会议决定',
+    '确认第三季度优先事项。',
+    '',
+    '---',
+    '',
+    '## 完整转写',
+    '',
+    '[00:00-00:30] 讨论第三季度优先事项。',
+    '[00:30-01:00] 确认负责人和截止日期。'
+  ].join('\n'),
   createdAt: '2026-07-14T01:20:00.000Z',
   updatedAt: '2026-07-14T02:30:00.000Z'
 }
@@ -68,6 +80,16 @@ async function mockApi(page) {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) })
     }
 
+    if (pathname === '/api/summarize' && request.method() === 'POST') {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          summary: '## 会议纪要草稿\n\n### 关键结论\n\n确认第三季度发布计划。'
+        })
+      })
+    }
+
     return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ message: 'Not mocked' }) })
   })
 }
@@ -86,6 +108,13 @@ async function saveQaScreenshot(page, name) {
   if (!directory) return
   await fs.mkdir(directory, { recursive: true })
   await page.screenshot({ path: path.join(directory, name), fullPage: false })
+}
+
+async function expectSelectedTabSettled(page, name) {
+  const tab = page.getByRole('tab', { name })
+  await expect(tab).toHaveAttribute('aria-selected', 'true')
+  await expect.poll(() => tab.evaluate(element => getComputedStyle(element).backgroundColor))
+    .toBe('rgb(255, 255, 255)')
 }
 
 test('desktop calendar creates, reads, and edits a meeting', async ({ page }) => {
@@ -108,8 +137,17 @@ test('desktop calendar creates, reads, and edits a meeting', async ({ page }) =>
   await expect.poll(async () => (await assistant.boundingBox())?.x ?? Number.POSITIVE_INFINITY).toBeLessThan(1440)
   await page.getByLabel('会议标题').fill('第三季度产品规划会')
   await page.getByRole('button', { name: '插入会议模板' }).click()
-  await expect(page.getByLabel('会议正文')).toHaveValue(/会议议题/)
-  await saveQaScreenshot(page, 'desktop-editor-1440x900.png')
+  await expect(page.getByLabel('会议纪要')).toHaveValue(/会议议题/)
+
+  await page.getByRole('tab', { name: '完整转写' }).click()
+  await page.getByLabel('完整转写').fill('[00:00-00:30] 讨论第三季度发布计划。')
+  await expectSelectedTabSettled(page, '完整转写')
+  await saveQaScreenshot(page, 'desktop-transcript-1440x900.png')
+  await page.getByRole('button', { name: '整理为会议纪要' }).click()
+  await expectSelectedTabSettled(page, '会议纪要')
+  await expect(page.getByLabel('会议纪要')).toHaveValue(/确认第三季度发布计划/)
+  await expect(page.locator('[data-section-top]')).toBeInViewport()
+  await saveQaScreenshot(page, 'desktop-summary-first-1440x900.png')
 
   await page.setViewportSize({ width: 1280, height: 800 })
   await expect.poll(async () => (await assistant.boundingBox())?.x ?? Number.POSITIVE_INFINITY).toBeLessThan(1280)
@@ -121,9 +159,16 @@ test('desktop calendar creates, reads, and edits a meeting', async ({ page }) =>
   await expect(page.getByText('第三季度产品规划会')).toBeVisible()
 
   await page.getByText('季度目标讨论').click()
+  await expect(page.getByRole('tab', { name: '会议纪要' })).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByText('确认第三季度优先事项。')).toBeVisible()
+  await expect(page.getByText(/讨论第三季度优先事项/)).toHaveCount(0)
   await expect(page.getByText('已整理')).toBeVisible()
-  await page.waitForTimeout(250)
+  await page.getByRole('tab', { name: '完整转写' }).click()
+  await expect(page.getByText(/讨论第三季度优先事项/)).toBeVisible()
+  await expectSelectedTabSettled(page, '完整转写')
+  await saveQaScreenshot(page, 'desktop-detail-transcript-1440x900.png')
+  await page.getByRole('tab', { name: '会议纪要' }).click()
+  await expectSelectedTabSettled(page, '会议纪要')
   await saveQaScreenshot(page, 'desktop-detail-1440x900.png')
 
   await page.getByRole('button', { name: '编辑' }).click()
@@ -142,6 +187,11 @@ test('mobile starts in day view and opens the assistant sheet without overflow',
   await expect(page.getByRole('button', { name: '日', exact: true })).toHaveAttribute('aria-pressed', 'true')
   await saveQaScreenshot(page, 'mobile-calendar-390x844.png')
   await page.getByRole('button', { name: '新建会议' }).click()
+  await expect(page.getByRole('tab', { name: '会议纪要' })).toBeVisible()
+  await expect(page.getByRole('tab', { name: '完整转写' })).toBeVisible()
+  await page.getByRole('tab', { name: '完整转写' }).click()
+  await expectSelectedTabSettled(page, '完整转写')
+  await saveQaScreenshot(page, 'mobile-summary-tabs-390x844.png')
   await page.getByRole('button', { name: '打开会议助手' }).click()
   const assistant = page.locator('[data-region="assistant"]')
   await expect(assistant).toContainText('实时记录')
