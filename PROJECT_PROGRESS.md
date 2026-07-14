@@ -36,7 +36,7 @@
 
 ## 1. 当前快照
 
-最后更新：2026-07-14 13:55（Asia/Shanghai）
+最后更新：2026-07-14 16:55（Asia/Shanghai）
 
 ### 1.1 产品结论
 
@@ -52,7 +52,7 @@
 |---|---|---|---|
 | 仓库根目录 | `codex/remote-laptop-access` @ `d2eca28` | 进行中 | 有远程访问、模型网关、设置 UI 和测试的未提交修改 |
 | 本地 `main` | `d2eca28` | 比 `origin/main` 多 1 个提交 | 仅增加忽略本地工作树的提交 |
-| `.worktrees/asr-service` | `feature/asr-service` @ `0cc9c1c` | 进行中 | 已包含 UI 重设计及 Playwright 验收提交，另有 `App.vue`、云端代理/模型网关等未提交修改 |
+| `.worktrees/asr-service` | `feature/asr-service` @ `291546b` | 进行中 | 已包含 UI 重设计、会议纪要优先阅读流和 Playwright 验收提交，另有 `App.vue`、云端代理/模型网关等既有未提交修改 |
 | 远端 `origin/main` | `1d442be` | 当前远端基线 | 只包含最初 Cloudflare Pages + D1 版本 |
 
 两个工作区中有 15 个同名脏文件，但只有 6 个内容完全相同；不能直接删除其中任意一份。根工作区还有独有的 `meeting-assistant/REMOTE_ACCESS.md`，ASR 工作树还有 ASR、录音和摘要代理等独有改动。
@@ -63,10 +63,12 @@
 |---|---|---|
 | 根工作区主应用测试 | `cd meeting-assistant; npm.cmd test` | 16/16 通过 |
 | 根工作区主应用构建 | `cd meeting-assistant; npm.cmd run build` | 通过，Vite 产物生成 |
-| ASR 工作树主应用测试 | `cd .worktrees/asr-service/meeting-assistant; npm.cmd test` | Node 50/50、UI 28/28 通过 |
+| ASR 工作树主应用测试 | `cd .worktrees/asr-service/meeting-assistant; npm.cmd test` | Node 56/56、UI 35/35 通过 |
 | ASR 工作树主应用构建 | `cd .worktrees/asr-service/meeting-assistant; npm.cmd run build` | 通过，Vite 产物生成 |
-| ASR 工作树浏览器 E2E | `cd .worktrees/asr-service/meeting-assistant; npm.cmd run test:e2e` | Chrome 2/2 通过；覆盖创建、模板、完成、详情、再编辑和移动端助手 |
+| ASR 工作树浏览器 E2E | `cd .worktrees/asr-service/meeting-assistant; npm.cmd run test:e2e` | Chrome 2/2 通过；覆盖会议纪要默认优先、完整转写按需切换、整理后回到纪要、详情页切换和移动端标签/助手 |
 | ASR 工作树生产依赖审计 | `npm.cmd audit --omit=dev` | 0 个漏洞 |
+| ASR 工作树差异检查 | `git diff --check` | 退出码 0；仅有 Git 换行提示 |
+| ASR 工作树本地预览 | `curl.exe -I http://localhost:54730/` | HTTP 200 |
 | Python ASR 快速测试 | 在 WSL 中运行 `../.venv-asr/bin/python -m pytest -q` | 15/15 通过 |
 | 历史原型构建 | `cd meeting-note-app; npm.cmd run build` | 未验证；当前未安装 `vue-tsc`/依赖 |
 | GitHub 远端 | `git ls-remote origin refs/heads/main` | 可访问，远端为 `1d442be` |
@@ -87,8 +89,10 @@
 - 已使用系统 Google Chrome 验证 `1440x900`、`1280x800` 和 `390x844`；无横向溢出、无应用控制台错误，桌面助手栏和移动端底部抽屉均进入可视区域。
 - 已将批准的 HTML 概念和实现截图直接对照；截图保存在仓库外的 `C:\Users\Administrator\.codex\qa\meetingrecord-ui`，Playwright 临时 trace/output 写入系统临时目录。
 - 本轮没有执行 Cloudflare 部署；线上 `meeting-assistant-136.pages.dev` 仍是此前部署版本。
-- 后续阅读体验改进已确认采用“会议纪要优先 + 完整转写标签切换”：打开会议默认显示纪要，只有核对细节时才查看完整转写；正式方案见 `docs/superpowers/specs/2026-07-14-summary-transcript-tabs-design.md`，提交为 `a1c0946`，尚未开始实现。
-- 对应实施计划已写入 `docs/superpowers/plans/2026-07-14-summary-transcript-tabs.md`，提交为 `b1302dd`；计划分为内容编解码、标签控件、文档受控分区、编辑/详情数据流、Chrome E2E 和最终交接六个任务。
+- 阅读体验改进已完成“会议纪要优先 + 完整转写标签切换”：打开编辑和详情页默认显示纪要，完整转写通过分段标签按需查看；ASR 只写入转写，纪要整理只读取转写并只替换纪要。
+- 对应设计和计划分别为 `docs/superpowers/specs/2026-07-14-summary-transcript-tabs-design.md`（`a1c0946`）与 `docs/superpowers/plans/2026-07-14-summary-transcript-tabs.md`（`b1302dd`）；实现提交为 `baf31f5`、`c09ba9a`、`2a48d5d`、`7aab918`，E2E 覆盖提交为 `291546b`。
+- 本轮截图证据保存在仓库外 `C:\Users\Administrator\.codex\qa\meetingrecord-summary-tabs`，包括桌面纪要优先、桌面完整转写、详情页纪要/转写和 390px 移动端标签/助手。
+- 本轮没有执行 Cloudflare 部署；线上 `meeting-assistant-136.pages.dev` 仍未包含该本地 UI/阅读流改动。
 
 ## 2. 用户目标与产品范围
 
@@ -425,7 +429,7 @@ curl.exe http://127.0.0.1:11434/api/tags
 
 ## 9. 下次从这里开始
 
-推荐入口：`.worktrees/asr-service/meeting-assistant`。当前 `feature/asr-service` 最新提交为 `0cc9c1c`；UI 重设计已完成本地浏览器验收，但 `App.vue`、云端代理/模型网关和相关测试仍有用户既有的未提交修改，继续时不得覆盖或回退。
+推荐入口：`.worktrees/asr-service/meeting-assistant`。当前 `feature/asr-service` 最新提交为 `291546b`；UI 重设计和“会议纪要优先 + 完整转写按需查看”阅读流已完成本地浏览器验收，但 `App.vue`、云端代理/模型网关和相关测试仍有用户既有的未提交修改，继续时不得覆盖或回退。
 
 开始前按顺序执行：
 
@@ -438,7 +442,7 @@ git -C .\.worktrees\asr-service status --short --branch
 git -C .\.worktrees\asr-service diff --stat
 ```
 
-首个工作目标：按 `docs/superpowers/plans/2026-07-14-summary-transcript-tabs.md` 从 Task 1 开始执行，先用失败测试建立 `parseMeetingContent` / `serializeMeetingContent` 兼容层。继续时必须保护 `App.vue`、云端代理/模型网关和两处工作树的既有未提交改动。UI 若要发布，必须由用户单独明确要求部署；当前线上版本尚未包含本轮重设计。
+首个工作目标：回到 Phase 1 分支收敛，逐文件处理两处工作树中云端代理、模型网关、访问口令和相关测试的既有未提交改动。继续时必须保护 `App.vue`、云端代理/模型网关和两处工作树的既有未提交改动。UI 若要发布，必须由用户单独明确要求部署；当前线上版本尚未包含本轮重设计和纪要/转写标签流。
 
 Phase 1 的最低回归命令：
 
@@ -446,12 +450,15 @@ Phase 1 的最低回归命令：
 cd E:\Objects\MeetingRecord\.worktrees\asr-service\meeting-assistant
 npm.cmd test
 npm.cmd run build
+$env:UI_QA_DIR='C:\Users\Administrator\.codex\qa\meetingrecord-summary-tabs'
+npm.cmd run test:e2e
 
 wsl.exe bash -lc "cd /mnt/e/Objects/MeetingRecord/.worktrees/asr-service/asr-service && ../.venv-asr/bin/python -m pytest -q"
 ```
 
 ## 10. 更新日志
 
+- 2026-07-14 16:55：完成“会议纪要优先 + 完整转写按需查看”实现和验收。提交 `baf31f5` 新增 `content` 字段的纪要/转写 Markdown 编解码，`c09ba9a` 新增无障碍分段标签控件，`2a48d5d` 将文档区拆分为纪要/转写受控视图，`7aab918` 让编辑和详情默认显示纪要、ASR 只写转写、整理只读取转写并回到纪要，`291546b` 增加桌面和移动端 E2E 覆盖。最新验证为 `git diff --check` 退出 0、`npm.cmd test` Node 56/56 + UI 35/35、`npm.cmd run build` 通过、`npm.cmd run test:e2e` Chrome 2/2、`npm.cmd audit --omit=dev` 0 漏洞、本地预览 `http://localhost:54730/` HTTP 200；截图保存在 `C:\Users\Administrator\.codex\qa\meetingrecord-summary-tabs`。本轮未部署到 Cloudflare。
 - 2026-07-14 13:55：用户复核通过“会议纪要优先 + 完整转写按需查看”设计；已完成包含六个 TDD 任务的实施计划 `docs/superpowers/plans/2026-07-14-summary-transcript-tabs.md`，覆盖旧数据保守解析、规范 Markdown 序列化、无障碍标签控件、编辑/详情受控状态、ASR 与纪要隔离、桌面/移动端 Chrome E2E 和进度交接。计划提交为 `b1302dd`；功能代码尚未开始修改，未部署。
 - 2026-07-14 13:24：用户确认会议结束后优先阅读整理后的会议纪要，完整语音转写只用于核对细节；批准采用“会议纪要 / 完整转写”分段切换，默认纪要、整理成功后自动回到纪要、重新整理只替换纪要且保留转写。兼容方案继续使用现有 `content` 字段，以规范 Markdown 分区和保守旧数据解析避免数据库迁移。设计已写入 `docs/superpowers/specs/2026-07-14-summary-transcript-tabs-design.md` 并提交为 `a1c0946`；尚未实现、未部署。
 - 2026-07-14 12:10：完成 A“时间地平线”UI 重设计的本地浏览器验收。修复移动端纯图标“新建会议”缺少可访问名称、桌面 1100px 以上助手栏仍被 `translate-x-full` 移出视口的问题；升级开发依赖 Playwright 至 1.61.1 以兼容本机 Node 24，并使用系统 Chrome 跑通 2/2 E2E。最新全量结果为 Node 50/50、UI 28/28、Vite 构建通过、生产依赖 0 漏洞；已检查 `1440x900`、`1280x800`、`390x844` 截图并与批准的 HTML 概念对照。浏览器验收提交为 `0cc9c1c`，本轮未部署。
