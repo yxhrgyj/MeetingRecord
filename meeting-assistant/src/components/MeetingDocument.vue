@@ -1,21 +1,33 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { CalendarDays, Clock3, Plus, Users, X } from '@lucide/vue'
+import MeetingContentTabs from '@/components/MeetingContentTabs.vue'
 
 const props = defineProps({
   modelValue: { type: Object, required: true },
-  mode: { type: String, required: true }
+  mode: { type: String, required: true },
+  activeSection: { type: String, default: 'summary' }
 })
 
 const emit = defineEmits([
   'update:modelValue',
   'add-attendee',
   'remove-attendee',
-  'content-keydown'
+  'content-keydown',
+  'update:activeSection',
+  'organize'
 ])
 
 const attendeeInput = ref('')
 const contentRef = ref(null)
+const sectionTopRef = ref(null)
+
+const activeField = computed(() => props.activeSection === 'transcript' ? 'transcript' : 'summary')
+const activeContent = computed(() => {
+  const structuredValue = props.modelValue[activeField.value]
+  if (structuredValue !== undefined) return structuredValue
+  return activeField.value === 'summary' ? props.modelValue.content || '' : ''
+})
 
 function patch(values) {
   emit('update:modelValue', { ...props.modelValue, ...values })
@@ -42,7 +54,17 @@ function getContentElement() {
   return contentRef.value
 }
 
-defineExpose({ focusContent, getContentElement })
+function patchActiveContent(value) {
+  const usesStructuredSections = 'summary' in props.modelValue || 'transcript' in props.modelValue
+  if (usesStructuredSections) patch({ [activeField.value]: value })
+  else patch({ content: value })
+}
+
+function scrollToSectionTop() {
+  sectionTopRef.value?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+}
+
+defineExpose({ focusContent, getContentElement, scrollToSectionTop })
 </script>
 
 <template>
@@ -132,18 +154,51 @@ defineExpose({ focusContent, getContentElement })
         </div>
       </div>
 
+      <div ref="sectionTopRef" data-section-top class="mt-5 flex items-center justify-between gap-3 border-b border-line pb-4">
+        <MeetingContentTabs
+          :model-value="activeSection"
+          @update:model-value="$emit('update:activeSection', $event)"
+        />
+      </div>
+
       <div class="sticky top-0 z-10 -mx-2 border-b border-line bg-white/90 px-2 py-2 backdrop-blur-xl">
         <slot name="toolbar"></slot>
       </div>
 
+      <div
+        v-if="activeSection === 'summary' && !activeContent"
+        class="mt-5 rounded-panel border border-line bg-canvas px-4 py-3 text-xs text-secondary"
+      >
+        <p>尚未生成会议纪要</p>
+        <div class="mt-3 flex flex-wrap gap-2">
+          <button
+            type="button"
+            class="command-button"
+            data-action="organize-empty"
+            :disabled="!modelValue.transcript?.trim()"
+            @click="$emit('organize')"
+          >
+            整理会议纪要
+          </button>
+          <button
+            type="button"
+            class="btn-ghost"
+            data-action="show-transcript"
+            @click="$emit('update:activeSection', 'transcript')"
+          >
+            查看完整转写
+          </button>
+        </div>
+      </div>
+
       <textarea
         ref="contentRef"
-        :value="modelValue.content"
-        data-field="content"
-        aria-label="会议正文"
+        :value="activeContent"
+        :data-field="activeField"
+        :aria-label="activeSection === 'summary' ? '会议纪要' : '完整转写'"
         class="focus-ring mt-5 min-h-[430px] w-full resize-none rounded-control border-0 bg-transparent p-0 text-sm leading-7 text-secondary placeholder:text-black/25"
-        placeholder="记录讨论要点，或从会议助手开始录音、上传音频。"
-        @input="patch({ content: $event.target.value })"
+        :placeholder="activeSection === 'summary' ? '记录会议结论、决定和行动项' : '语音转写将在这里显示，也可手动修正识别结果'"
+        @input="patchActiveContent($event.target.value)"
         @keydown="$emit('content-keydown', $event)"
       ></textarea>
     </template>
@@ -163,12 +218,29 @@ defineExpose({ focusContent, getContentElement })
           {{ name }}
         </span>
       </div>
+      <div ref="sectionTopRef" data-section-top class="mt-5 border-b border-line pb-4">
+        <MeetingContentTabs
+          :model-value="activeSection"
+          @update:model-value="$emit('update:activeSection', $event)"
+        />
+      </div>
       <pre
-        v-if="modelValue.content"
-        data-content="read"
+        v-if="activeContent"
+        :data-content="activeField"
         class="mt-6 whitespace-pre-wrap font-sans text-sm leading-7 text-secondary"
-      >{{ modelValue.content }}</pre>
-      <p v-else data-content="read" class="mt-8 text-sm text-muted">暂无会议内容</p>
+      >{{ activeContent }}</pre>
+      <div v-else :data-content="activeField" class="mt-8 text-sm text-muted">
+        <p>{{ activeSection === 'summary' ? '该会议尚未整理纪要' : '暂无完整转写' }}</p>
+        <button
+          v-if="activeSection === 'summary' && modelValue.transcript"
+          type="button"
+          class="command-button mt-3"
+          data-action="show-transcript"
+          @click="$emit('update:activeSection', 'transcript')"
+        >
+          查看完整转写
+        </button>
+      </div>
     </template>
   </article>
 </template>

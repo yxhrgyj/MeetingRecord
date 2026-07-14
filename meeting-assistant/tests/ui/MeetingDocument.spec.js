@@ -20,7 +20,7 @@ describe('MeetingDocument', () => {
     })
 
     expect(wrapper.get('[data-field="title"]').element.value).toBe('第三季度产品规划会')
-    expect(wrapper.get('[data-field="content"]').element.value).toContain('会议议题')
+    expect(wrapper.get('[data-field="summary"]').element.value).toContain('会议议题')
 
     await wrapper.get('[data-field="title"]').setValue('更新后的规划会')
 
@@ -47,13 +47,74 @@ describe('MeetingDocument', () => {
 
   it('renders saved content without form controls in read mode', () => {
     const wrapper = mount(MeetingDocument, {
-      props: { modelValue: meeting, mode: 'read' }
+      props: { modelValue: meeting, mode: 'read', activeSection: 'summary' }
     })
 
     expect(wrapper.find('input').exists()).toBe(false)
     expect(wrapper.find('textarea').exists()).toBe(false)
-    expect(wrapper.get('[data-content="read"]').text()).toContain('讨论产品优先级')
+    expect(wrapper.get('[data-content="summary"]').text()).toContain('讨论产品优先级')
     expect(wrapper.text()).toContain('李明')
+  })
+
+  it('defaults to minutes and switches to the complete transcript', async () => {
+    const structuredMeeting = {
+      ...meeting,
+      summary: '### 会议决定\n继续推进',
+      transcript: '[00:00-00:30] 讨论方案'
+    }
+    const wrapper = mount(MeetingDocument, {
+      props: {
+        modelValue: structuredMeeting,
+        mode: 'edit',
+        activeSection: 'summary'
+      }
+    })
+
+    expect(wrapper.get('[data-field="summary"]').element.value).toContain('继续推进')
+    await wrapper.get('[data-section="transcript"]').trigger('click')
+    expect(wrapper.emitted('update:activeSection')[0]).toEqual(['transcript'])
+  })
+
+  it('emits only the active section content', async () => {
+    const structuredMeeting = { ...meeting, summary: '', transcript: '原始转写' }
+    const wrapper = mount(MeetingDocument, {
+      props: {
+        modelValue: structuredMeeting,
+        mode: 'edit',
+        activeSection: 'transcript'
+      }
+    })
+
+    await wrapper.get('[data-field="transcript"]').setValue('修正后的转写')
+    expect(wrapper.emitted('update:modelValue').at(-1)[0]).toEqual({
+      ...structuredMeeting,
+      transcript: '修正后的转写'
+    })
+  })
+
+  it('shows minutes first in read mode and keeps transcript available', () => {
+    const wrapper = mount(MeetingDocument, {
+      props: {
+        modelValue: { ...meeting, summary: '整理结论', transcript: '详细原文' },
+        mode: 'read',
+        activeSection: 'summary'
+      }
+    })
+
+    expect(wrapper.get('[data-content="summary"]').text()).toContain('整理结论')
+    expect(wrapper.find('[data-content="transcript"]').exists()).toBe(false)
+  })
+
+  it('disables organization until a transcript exists', () => {
+    const wrapper = mount(MeetingDocument, {
+      props: {
+        modelValue: { ...meeting, summary: '', transcript: '' },
+        mode: 'edit',
+        activeSection: 'summary'
+      }
+    })
+
+    expect(wrapper.get('[data-action="organize-empty"]').attributes('disabled')).toBeDefined()
   })
 })
 

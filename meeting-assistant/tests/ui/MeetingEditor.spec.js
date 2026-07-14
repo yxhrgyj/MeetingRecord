@@ -79,12 +79,12 @@ describe('MeetingEditor integration', () => {
   it('preserves Markdown, ASR upload, and AI summary behavior', async () => {
     const wrapper = mount(MeetingEditor, { props: { initialData } })
     await nextTick()
-    const textarea = wrapper.get('[data-field="content"]')
+    const textarea = wrapper.get('[data-field="summary"]')
     textarea.element.setSelectionRange(0, 4)
 
     await wrapper.get('[data-command="bold"]').trigger('click')
     await nextTick()
-    expect(wrapper.get('[data-field="content"]').element.value).toContain('**原始内容**')
+    expect(wrapper.get('[data-field="summary"]').element.value).toContain('**原始内容**')
 
     const fileInput = wrapper.get('input[type="file"]')
     const audio = new File(['audio'], 'meeting.wav', { type: 'audio/wav' })
@@ -93,13 +93,13 @@ describe('MeetingEditor integration', () => {
     await flushPromises()
 
     expect(clients.transcribeAudio).toHaveBeenCalledWith(audio)
-    expect(wrapper.get('[data-field="content"]').element.value).toContain('转写结果')
+    expect(wrapper.get('[data-field="summary"]').element.value).toContain('转写结果')
 
     await wrapper.get('[data-action="summarize"]').trigger('click')
     await flushPromises()
 
     expect(clients.summarizeContent).toHaveBeenCalled()
-    expect(wrapper.get('[data-field="content"]').element.value).toContain('确认三项行动')
+    expect(wrapper.get('[data-field="summary"]').element.value).toContain('确认三项行动')
 
     wrapper.unmount()
   })

@@ -19,7 +19,7 @@ describe('MeetingDetail', () => {
     const wrapper = mount(MeetingDetail, { props: { meeting } })
 
     expect(wrapper.get('[data-region="document"]').text()).toContain('第三季度产品规划会')
-    expect(wrapper.get('[data-content="read"]').text()).toContain('统一使用 Qwen3 8B')
+    expect(wrapper.get('[data-content="summary"]').text()).toContain('统一使用 Qwen3 8B')
     expect(wrapper.get('[data-region="assistant"]').text()).toContain('已整理')
     expect(wrapper.text()).toContain('李明')
   })
