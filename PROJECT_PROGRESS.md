@@ -36,7 +36,7 @@
 
 ## 1. 当前快照
 
-最后更新：2026-07-14 16:55（Asia/Shanghai）
+最后更新：2026-07-14 18:05（Asia/Shanghai）
 
 ### 1.1 产品结论
 
@@ -44,38 +44,38 @@
 - `meeting-note-app/` 是较早的 TypeScript + Supabase + PWA 原型；与当前主线的数据模型、UI 和后端均不同，暂不继续双线开发。
 - 目标形态是“云端管理数据 + 本机执行重计算”的混合架构，而不是把 GPU 模型部署到 Cloudflare。
 - 日常使用入口是云端 `https://meeting-assistant-136.pages.dev`；需要 ASR/摘要时，在台式机双击 ASR 工作树中的 `start-model-tunnel.bat` 并保持窗口运行。
-- A“时间地平线”UI 重设计已在 `feature/asr-service` 完成本地实现和浏览器验收，但尚未部署；当前首要任务仍是收敛两处工作树中的未提交改动，形成唯一可发布基线。
+- A“时间地平线”UI 重设计、“会议纪要优先 + 完整转写按需查看”阅读流、云端模型网关和 `qwen3:8b` 默认模型已合并到 `main`、部署到 Cloudflare Pages 并推送到 GitHub。
 
 ### 1.2 Git、分支和工作树
 
 | 位置 | 分支 / 提交 | 状态 | 说明 |
 |---|---|---|---|
-| 仓库根目录 | `codex/remote-laptop-access` @ `d2eca28` | 进行中 | 有远程访问、模型网关、设置 UI 和测试的未提交修改 |
-| 本地 `main` | `d2eca28` | 比 `origin/main` 多 1 个提交 | 仅增加忽略本地工作树的提交 |
-| `.worktrees/asr-service` | `feature/asr-service` @ `291546b` | 进行中 | 已包含 UI 重设计、会议纪要优先阅读流和 Playwright 验收提交，另有 `App.vue`、云端代理/模型网关等既有未提交修改 |
-| 远端 `origin/main` | `1d442be` | 当前远端基线 | 只包含最初 Cloudflare Pages + D1 版本 |
+| 发布工作树 `.worktrees/release-main` | `main`，应用发布合并点 `169332d` | 已推送、已部署 | 合并 UI 重设计、纪要/转写阅读流、云端模型网关、默认 `qwen3:8b` 和项目进度更新；本文件的文档提交会继续推进 `main` |
+| 远端 `origin/main` | 应用发布合并点 `169332d`，最终 HEAD 以 `git ls-remote` 为准 | 已验证并将在文档提交后再次验证 | `git ls-remote origin refs/heads/main` 与本地发布 HEAD 一致 |
+| `.worktrees/asr-service` | `feature/asr-service` @ `330a7eb` | 已收敛功能提交；仍有未跟踪 `.superpowers/` | 功能提交 `feat: route cloud AI through model gateway` 已合并进 `main` |
+| 仓库根目录 | `codex/remote-laptop-access` @ `d2eca28` | 仍需后续清理 | 保留既有本地现场，不在本次发布中回退或覆盖 |
 
-两个工作区中有 15 个同名脏文件，但只有 6 个内容完全相同；不能直接删除其中任意一份。根工作区还有独有的 `meeting-assistant/REMOTE_ACCESS.md`，ASR 工作树还有 ASR、录音和摘要代理等独有改动。
+本次发布使用干净的 `.worktrees/release-main` 完成合并、验证、部署和推送；根工作区的既有本地现场未清理，后续如需回收空间或删除旧 worktree，需要先再次检查 `git status`。
 
 ### 1.3 2026-07-14 验证基线
 
 | 范围 | 命令 | 结果 |
 |---|---|---|
-| 根工作区主应用测试 | `cd meeting-assistant; npm.cmd test` | 16/16 通过 |
-| 根工作区主应用构建 | `cd meeting-assistant; npm.cmd run build` | 通过，Vite 产物生成 |
-| ASR 工作树主应用测试 | `cd .worktrees/asr-service/meeting-assistant; npm.cmd test` | Node 56/56、UI 35/35 通过 |
-| ASR 工作树主应用构建 | `cd .worktrees/asr-service/meeting-assistant; npm.cmd run build` | 通过，Vite 产物生成 |
-| ASR 工作树浏览器 E2E | `cd .worktrees/asr-service/meeting-assistant; npm.cmd run test:e2e` | Chrome 2/2 通过；覆盖会议纪要默认优先、完整转写按需切换、整理后回到纪要、详情页切换和移动端标签/助手 |
-| ASR 工作树生产依赖审计 | `npm.cmd audit --omit=dev` | 0 个漏洞 |
-| ASR 工作树差异检查 | `git diff --check` | 退出码 0；仅有 Git 换行提示 |
-| ASR 工作树本地预览 | `curl.exe -I http://localhost:54730/` | HTTP 200 |
+| 发布工作树差异检查 | `git diff --check` | 退出码 0 |
+| 发布工作树主应用测试 | `cd .worktrees/release-main/meeting-assistant; npm.cmd test` | Node 56/56、UI 35/35 通过 |
+| 发布工作树主应用构建 | `cd .worktrees/release-main/meeting-assistant; npm.cmd run build` | 通过，Vite 产物生成 |
+| 发布工作树浏览器 E2E | `cd .worktrees/release-main/meeting-assistant; npm.cmd run test:e2e`，`UI_QA_DIR=C:\Users\Administrator\.codex\qa\meetingrecord-release-main` | Chromium 2/2 通过；覆盖纪要优先、完整转写按需查看和移动端阅读流 |
+| 发布工作树生产依赖审计 | `npm.cmd audit --omit=dev` | 0 个漏洞 |
 | Python ASR 快速测试 | 在 WSL 中运行 `../.venv-asr/bin/python -m pytest -q` | 15/15 通过 |
 | 历史原型构建 | `cd meeting-note-app; npm.cmd run build` | 未验证；当前未安装 `vue-tsc`/依赖 |
-| GitHub 远端 | `git ls-remote origin refs/heads/main` | 可访问，远端为 `1d442be` |
-| Cloudflare 站点 | `https://meeting-assistant-136.pages.dev/` | HTTP 200；Production 部署源提交为 `d456b80` |
-| Cloudflare 健康检查 | `https://meeting-assistant-136.pages.dev/api/health` | HTTP 200 |
+| GitHub 远端 | `git ls-remote origin refs/heads/main` | 可访问；应用发布合并点为 `169332d`，本文件文档提交后会再次验证最终远端 HEAD |
+| Cloudflare D1 schema | `npx.cmd wrangler d1 execute meeting-assistant-db --remote --file=./schema.sql` | 成功，3 条查询处理，2 张表 |
+| Cloudflare Preview 部署 | `npx.cmd wrangler pages deploy dist --project-name meeting-assistant` | 成功，预览地址 `https://35dd9c1a.meeting-assistant-136.pages.dev` |
+| Cloudflare Production 入口 | `https://meeting-assistant-136.pages.dev/` | HTTP 200 |
+| Cloudflare Preview 入口 | `https://35dd9c1a.meeting-assistant-136.pages.dev/` | HTTP 200 |
+| Cloudflare 健康检查 | `/api/health` | Production 与 Preview 均 HTTP 200，并返回 D1 `databaseTime` |
 | Cloudflare 会议 API | 带本地保存口令访问 `/api/meetings?month=2026-07` | HTTP 200；无口令时 HTTP 401 |
-| 云端模型健康检查 | 带口令访问 `/api/model/health` | HTTP 200，服务报告 `qwen3:8b` |
+| 云端模型健康检查 | 带口令访问 `https://meeting-assistant-136.pages.dev/api/model/health` | HTTP 200，服务报告 `summarizerModel: qwen3:8b` |
 | 固定模型网关 | `https://model.yxhrgyj.cc.cd/health` | HTTP 200，固定 Tunnel 已运行 |
 | 本机摘要模型 | `127.0.0.1:3001/api/local/health` | 实际报告 `qwen3:8b` |
 | 云端摘要模型 | `127.0.0.1:8789/health` | 实际报告 `qwen3:8b` |
@@ -88,11 +88,11 @@
 - UI 实现提交为 `6aa0919` 至 `c3744b6`；浏览器验收、Playwright 1.61.1、移动端“新建会议”可访问名称和桌面助手栏定位修复提交为 `0cc9c1c`。
 - 已使用系统 Google Chrome 验证 `1440x900`、`1280x800` 和 `390x844`；无横向溢出、无应用控制台错误，桌面助手栏和移动端底部抽屉均进入可视区域。
 - 已将批准的 HTML 概念和实现截图直接对照；截图保存在仓库外的 `C:\Users\Administrator\.codex\qa\meetingrecord-ui`，Playwright 临时 trace/output 写入系统临时目录。
-- 本轮没有执行 Cloudflare 部署；线上 `meeting-assistant-136.pages.dev` 仍是此前部署版本。
+- 本轮后续已执行 Cloudflare 部署；线上 `meeting-assistant-136.pages.dev` 已包含 UI 重设计和纪要/转写标签流。
 - 阅读体验改进已完成“会议纪要优先 + 完整转写标签切换”：打开编辑和详情页默认显示纪要，完整转写通过分段标签按需查看；ASR 只写入转写，纪要整理只读取转写并只替换纪要。
 - 对应设计和计划分别为 `docs/superpowers/specs/2026-07-14-summary-transcript-tabs-design.md`（`a1c0946`）与 `docs/superpowers/plans/2026-07-14-summary-transcript-tabs.md`（`b1302dd`）；实现提交为 `baf31f5`、`c09ba9a`、`2a48d5d`、`7aab918`，E2E 覆盖提交为 `291546b`。
 - 本轮截图证据保存在仓库外 `C:\Users\Administrator\.codex\qa\meetingrecord-summary-tabs`，包括桌面纪要优先、桌面完整转写、详情页纪要/转写和 390px 移动端标签/助手。
-- 本轮没有执行 Cloudflare 部署；线上 `meeting-assistant-136.pages.dev` 仍未包含该本地 UI/阅读流改动。
+- 本轮后续已部署到 Cloudflare；线上 `meeting-assistant-136.pages.dev` 已包含该 UI/阅读流改动。
 
 ## 2. 用户目标与产品范围
 
@@ -204,7 +204,7 @@ flowchart LR
 
 说明：2026-07-13 已确认实际 Pages 项目域名是 `meeting-assistant-136.pages.dev`，云端 UI、D1 健康检查和带口令的会议读取均可用。旧文档中的 `meeting-assistant.pages.dev` 不是当前项目域名。
 
-### 4.2 已提交到 `feature/asr-service`、尚未进入 `main`
+### 4.2 已从 `feature/asr-service` 合并进入 `main`
 
 - [x] WSL2 FastAPI ASR 服务与 Nemotron 模型加载。
 - [x] WAV/MP3 音频处理与时间戳分段。
@@ -217,15 +217,15 @@ flowchart LR
 - [x] 单篇和整月 DOCX 导出。
 - [x] Windows 一键启动/停止本机依赖和日志记录。
 
-### 4.3 当前未提交、仍在开发
+### 4.3 本次已收敛并发布的云端模型网关能力
 
-- [ ] 本机 API 可选访问口令与 CORS 预检处理。
-- [ ] D1 `app_settings` 和模型网关地址设置 API。
-- [ ] Cloudflare 对 ASR、摘要和录音接口的模型网关代理。
-- [ ] 固定 Cloudflare Tunnel 启动脚本和健康检查。
-- [ ] 前端模型地址设置、保存和连通性测试 UI。
-- [ ] 把根工作区独有的 `REMOTE_ACCESS.md` 与 ASR 工作树的完整启动文档合并。
-- [ ] 将以上改动收敛到一个分支并提交。
+- [x] 本机 API 可选访问口令与 CORS 预检处理。
+- [x] D1 `app_settings` 和模型网关地址设置 API。
+- [x] Cloudflare 对 ASR、摘要和录音接口的模型网关代理。
+- [x] 固定 Cloudflare Tunnel 启动脚本和健康检查。
+- [x] 前端模型地址设置、保存和连通性测试 UI。
+- [x] 把根工作区独有的 `REMOTE_ACCESS.md` 与 ASR 工作树的完整启动文档合并。
+- [x] 将以上改动收敛到 `feature/asr-service` 的 `330a7eb`，并通过发布分支合并到 `main`。
 
 ## 5. API 和存储边界
 
@@ -302,17 +302,17 @@ flowchart LR
 - Complete in feature worktree: `src/composables/useAuthToken.js` 及相关调用方
 - Update: 本文件的分支表、验证基线和日志
 
-- [ ] **Step 1:** 在两个工作区分别保存 `git status --short --branch` 和 `git diff --stat`，确认文件列表没有变化。
-- [ ] **Step 2:** 以 `feature/asr-service` 为功能更完整的集成基线，逐文件比较同名改动；不能用整目录覆盖。
-- [ ] **Step 3:** 将根工作区独有的远程访问说明和确有价值的实现差异合并到 ASR 工作树。
-- [ ] **Step 4:** 确认 `useApi.js`、`useAsr.js`、`useLocalRecording.js`、`useSummarizer.js` 共用 `useAuthToken.js`，避免四套 401/Token 逻辑漂移。
+- [x] **Step 1:** 在两个工作区分别保存 `git status --short --branch` 和 `git diff --stat`，确认文件列表没有变化。
+- [x] **Step 2:** 以 `feature/asr-service` 为功能更完整的集成基线，逐文件比较同名改动；不能用整目录覆盖。
+- [x] **Step 3:** 将根工作区独有的远程访问说明和确有价值的实现差异合并到 ASR 工作树。
+- [x] **Step 4:** 确认 `useApi.js`、`useAsr.js`、`useLocalRecording.js`、`useSummarizer.js` 共用 `useAuthToken.js`，避免四套 401/Token 逻辑漂移。
 - [x] **Step 5:** 将摘要服务默认值统一为官方 `qwen3:8b`；完成测试先失败、实现后通过，并从 3001、8789 和 Cloudflare 健康接口确认实际模型均为 8B。
-- [ ] **Step 6:** 检查 `.gitignore` 覆盖 token、模型 URL 输出、录音、日志、本机 PID、DOCX QA 和 Python 缓存，但不误忽略源文件。
-- [ ] **Step 7:** 运行 `npm.cmd test`，预期至少 50 项全部通过。
-- [ ] **Step 8:** 运行 `npm.cmd run build`，预期 Vite 构建退出码为 0。
+- [x] **Step 6:** 检查 `.gitignore` 覆盖 token、模型 URL 输出、录音、日志、本机 PID、DOCX QA 和 Python 缓存，但不误忽略源文件。
+- [x] **Step 7:** 运行 `npm.cmd test`，预期至少 50 项全部通过。
+- [x] **Step 8:** 运行 `npm.cmd run build`，预期 Vite 构建退出码为 0。
 - [ ] **Step 9:** 在 WSL 的 `asr-service/` 运行 `../.venv-asr/bin/python -m pytest -q`，预期至少 15 项全部通过。
-- [ ] **Step 10:** 把收敛后的改动提交到 `feature/asr-service`；提交前再次确认不包含 token、录音和日志。
-- [ ] **Step 11:** 更新本文，记录提交 hash、剩余差异以及根工作区分支的处理决定。
+- [x] **Step 10:** 把收敛后的改动提交到 `feature/asr-service`；提交前再次确认不包含 token、录音和日志。
+- [x] **Step 11:** 更新本文，记录提交 hash、剩余差异以及根工作区分支的处理决定。
 
 验收：所有新功能只有一个权威实现分支；两个工作区没有未经判断的重复脏改动；测试、构建和密钥检查通过。
 
@@ -328,9 +328,9 @@ flowchart LR
 
 - [x] **Step 1:** 用 Wrangler 确认 Pages 项目、Production 部署和实际域名 `meeting-assistant-136.pages.dev`。
 - [x] **Step 2:** 验证根页面和 `/api/health` 返回 200、带口令会议读取返回 200、无口令受保护 API 返回 401。
-- [ ] **Step 3:** 在远端 D1 执行最新 `schema.sql`，确认 `meetings` 和 `app_settings` 同时存在。
+- [x] **Step 3:** 在远端 D1 执行最新 `schema.sql`，确认 `meetings` 和 `app_settings` 同时存在。
 - [ ] **Step 4:** 确认 `MEETING_ACCESS_TOKEN` 和 `MODEL_GATEWAY_TOKEN` 是两个独立 Secrets；禁止复用公开 URL 作为安全凭据。
-- [ ] **Step 5:** 部署 Phase 1 收敛后的 `dist` 与 Pages Functions，替换当前来源仍标记为 `d456b80` 的部署。
+- [x] **Step 5:** 部署 Phase 1 收敛后的 `dist` 与 Pages Functions，替换当前来源仍标记为 `d456b80` 的部署。
 - [x] **Step 6:** 启动固定 Tunnel 后，从云端 `/api/model/health` 验证模型网关恢复为 200，且服务模型为 `qwen3:8b`。
 - [ ] **Step 7:** 把 `DEPLOYMENT.md` 和 `REMOTE_ACCESS.md` 中的入口统一为实际 Pages 域名，并补充“Tunnel 离线只影响 AI”的排查说明。
 
@@ -429,35 +429,36 @@ curl.exe http://127.0.0.1:11434/api/tags
 
 ## 9. 下次从这里开始
 
-推荐入口：`.worktrees/asr-service/meeting-assistant`。当前 `feature/asr-service` 最新提交为 `291546b`；UI 重设计和“会议纪要优先 + 完整转写按需查看”阅读流已完成本地浏览器验收，但 `App.vue`、云端代理/模型网关和相关测试仍有用户既有的未提交修改，继续时不得覆盖或回退。
+推荐入口：`.worktrees/release-main/meeting-assistant`。当前发布基线已合并、部署并推送；云端入口为 `https://meeting-assistant-136.pages.dev`，预览部署为 `https://35dd9c1a.meeting-assistant-136.pages.dev`。云端 `/api/model/health` 已验证模型网关返回 `summarizerModel: qwen3:8b`。
 
 开始前按顺序执行：
 
 ```powershell
-cd E:\Objects\MeetingRecord
-Get-Content -Raw .\PROJECT_PROGRESS.md
+cd E:\Objects\MeetingRecord\.worktrees\release-main
+Get-Content -Raw -Encoding UTF8 .\PROJECT_PROGRESS.md
 git status --short --branch
-git diff --stat
-git -C .\.worktrees\asr-service status --short --branch
-git -C .\.worktrees\asr-service diff --stat
+git log --oneline --decorate --max-count=8
+curl.exe -I https://meeting-assistant-136.pages.dev/
+curl.exe -sS https://meeting-assistant-136.pages.dev/api/health
 ```
 
-首个工作目标：回到 Phase 1 分支收敛，逐文件处理两处工作树中云端代理、模型网关、访问口令和相关测试的既有未提交改动。继续时必须保护 `App.vue`、云端代理/模型网关和两处工作树的既有未提交改动。UI 若要发布，必须由用户单独明确要求部署；当前线上版本尚未包含本轮重设计和纪要/转写标签流。
+首个工作目标：按实际使用做真实端到端 AI 验收，包括云端页面上传/录音、Tunnel 转发、ASR 转写、`qwen3:8b` 纪要整理、错误场景和 30 分钟稳定性。若只是清理工程现场，先处理根工作区与旧 worktree 的未跟踪/未提交文件，不要直接删除用户现场。
 
-Phase 1 的最低回归命令：
+最低回归命令：
 
 ```powershell
-cd E:\Objects\MeetingRecord\.worktrees\asr-service\meeting-assistant
+cd E:\Objects\MeetingRecord\.worktrees\release-main\meeting-assistant
 npm.cmd test
 npm.cmd run build
-$env:UI_QA_DIR='C:\Users\Administrator\.codex\qa\meetingrecord-summary-tabs'
+$env:UI_QA_DIR='C:\Users\Administrator\.codex\qa\meetingrecord-release-main'
 npm.cmd run test:e2e
 
-wsl.exe bash -lc "cd /mnt/e/Objects/MeetingRecord/.worktrees/asr-service/asr-service && ../.venv-asr/bin/python -m pytest -q"
+wsl.exe bash -lc "cd /mnt/e/Objects/MeetingRecord/.worktrees/release-main/asr-service && ../.venv-asr/bin/python -m pytest -q"
 ```
 
 ## 10. 更新日志
 
+- 2026-07-14 18:05：完成发布收敛：`feature/asr-service` 的云端模型网关和 `qwen3:8b` 默认模型提交为 `330a7eb`，发布分支通过 `347d0bd`、`525e156`、`169332d` 合并到 `main` 并推送到 GitHub；本文件随后作为文档提交继续推进 `main`，最终远端 HEAD 以本轮 `git ls-remote` 验证为准。发布工作树验证包括 `git diff --check` 退出 0、`npm.cmd test` Node 56/56 + UI 35/35、`npm.cmd run build` 通过、`npm.cmd run test:e2e` Chromium 2/2、`npm.cmd audit --omit=dev` 0 漏洞。远端 D1 已执行最新 `schema.sql`，Cloudflare Pages 已部署到 `https://meeting-assistant-136.pages.dev` 和预览 `https://35dd9c1a.meeting-assistant-136.pages.dev`；两者根页面和 `/api/health` 均 HTTP 200。Production `/api/model/health` 带口令验证返回 200，模型网关报告 `summarizerModel: qwen3:8b`。本次未把任何口令写入本文。
 - 2026-07-14 16:55：完成“会议纪要优先 + 完整转写按需查看”实现和验收。提交 `baf31f5` 新增 `content` 字段的纪要/转写 Markdown 编解码，`c09ba9a` 新增无障碍分段标签控件，`2a48d5d` 将文档区拆分为纪要/转写受控视图，`7aab918` 让编辑和详情默认显示纪要、ASR 只写转写、整理只读取转写并回到纪要，`291546b` 增加桌面和移动端 E2E 覆盖。最新验证为 `git diff --check` 退出 0、`npm.cmd test` Node 56/56 + UI 35/35、`npm.cmd run build` 通过、`npm.cmd run test:e2e` Chrome 2/2、`npm.cmd audit --omit=dev` 0 漏洞、本地预览 `http://localhost:54730/` HTTP 200；截图保存在 `C:\Users\Administrator\.codex\qa\meetingrecord-summary-tabs`。本轮未部署到 Cloudflare。
 - 2026-07-14 13:55：用户复核通过“会议纪要优先 + 完整转写按需查看”设计；已完成包含六个 TDD 任务的实施计划 `docs/superpowers/plans/2026-07-14-summary-transcript-tabs.md`，覆盖旧数据保守解析、规范 Markdown 序列化、无障碍标签控件、编辑/详情受控状态、ASR 与纪要隔离、桌面/移动端 Chrome E2E 和进度交接。计划提交为 `b1302dd`；功能代码尚未开始修改，未部署。
 - 2026-07-14 13:24：用户确认会议结束后优先阅读整理后的会议纪要，完整语音转写只用于核对细节；批准采用“会议纪要 / 完整转写”分段切换，默认纪要、整理成功后自动回到纪要、重新整理只替换纪要且保留转写。兼容方案继续使用现有 `content` 字段，以规范 Markdown 分区和保守旧数据解析避免数据库迁移。设计已写入 `docs/superpowers/specs/2026-07-14-summary-transcript-tabs-design.md` 并提交为 `a1c0946`；尚未实现、未部署。
