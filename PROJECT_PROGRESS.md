@@ -36,7 +36,7 @@
 
 ## 1. 当前快照
 
-最后更新：2026-07-14 13:24（Asia/Shanghai）
+最后更新：2026-07-14 13:55（Asia/Shanghai）
 
 ### 1.1 产品结论
 
@@ -88,6 +88,7 @@
 - 已将批准的 HTML 概念和实现截图直接对照；截图保存在仓库外的 `C:\Users\Administrator\.codex\qa\meetingrecord-ui`，Playwright 临时 trace/output 写入系统临时目录。
 - 本轮没有执行 Cloudflare 部署；线上 `meeting-assistant-136.pages.dev` 仍是此前部署版本。
 - 后续阅读体验改进已确认采用“会议纪要优先 + 完整转写标签切换”：打开会议默认显示纪要，只有核对细节时才查看完整转写；正式方案见 `docs/superpowers/specs/2026-07-14-summary-transcript-tabs-design.md`，提交为 `a1c0946`，尚未开始实现。
+- 对应实施计划已写入 `docs/superpowers/plans/2026-07-14-summary-transcript-tabs.md`，提交为 `b1302dd`；计划分为内容编解码、标签控件、文档受控分区、编辑/详情数据流、Chrome E2E 和最终交接六个任务。
 
 ## 2. 用户目标与产品范围
 
@@ -437,7 +438,7 @@ git -C .\.worktrees\asr-service status --short --branch
 git -C .\.worktrees\asr-service diff --stat
 ```
 
-首个工作目标：先由用户复核 `docs/superpowers/specs/2026-07-14-summary-transcript-tabs-design.md`；确认无修改后，为“会议纪要 / 完整转写”标签切换编写实施计划。继续时必须保护 `App.vue`、云端代理/模型网关和两处工作树的既有未提交改动。UI 若要发布，必须由用户单独明确要求部署；当前线上版本尚未包含本轮重设计。
+首个工作目标：按 `docs/superpowers/plans/2026-07-14-summary-transcript-tabs.md` 从 Task 1 开始执行，先用失败测试建立 `parseMeetingContent` / `serializeMeetingContent` 兼容层。继续时必须保护 `App.vue`、云端代理/模型网关和两处工作树的既有未提交改动。UI 若要发布，必须由用户单独明确要求部署；当前线上版本尚未包含本轮重设计。
 
 Phase 1 的最低回归命令：
 
@@ -451,6 +452,7 @@ wsl.exe bash -lc "cd /mnt/e/Objects/MeetingRecord/.worktrees/asr-service/asr-ser
 
 ## 10. 更新日志
 
+- 2026-07-14 13:55：用户复核通过“会议纪要优先 + 完整转写按需查看”设计；已完成包含六个 TDD 任务的实施计划 `docs/superpowers/plans/2026-07-14-summary-transcript-tabs.md`，覆盖旧数据保守解析、规范 Markdown 序列化、无障碍标签控件、编辑/详情受控状态、ASR 与纪要隔离、桌面/移动端 Chrome E2E 和进度交接。计划提交为 `b1302dd`；功能代码尚未开始修改，未部署。
 - 2026-07-14 13:24：用户确认会议结束后优先阅读整理后的会议纪要，完整语音转写只用于核对细节；批准采用“会议纪要 / 完整转写”分段切换，默认纪要、整理成功后自动回到纪要、重新整理只替换纪要且保留转写。兼容方案继续使用现有 `content` 字段，以规范 Markdown 分区和保守旧数据解析避免数据库迁移。设计已写入 `docs/superpowers/specs/2026-07-14-summary-transcript-tabs-design.md` 并提交为 `a1c0946`；尚未实现、未部署。
 - 2026-07-14 12:10：完成 A“时间地平线”UI 重设计的本地浏览器验收。修复移动端纯图标“新建会议”缺少可访问名称、桌面 1100px 以上助手栏仍被 `translate-x-full` 移出视口的问题；升级开发依赖 Playwright 至 1.61.1 以兼容本机 Node 24，并使用系统 Chrome 跑通 2/2 E2E。最新全量结果为 Node 50/50、UI 28/28、Vite 构建通过、生产依赖 0 漏洞；已检查 `1440x900`、`1280x800`、`390x844` 截图并与批准的 HTML 概念对照。浏览器验收提交为 `0cc9c1c`，本轮未部署。
 - 2026-07-13 20:52：用户复核并确认 UI 重设计正式方案；已按 `superpowers:writing-plans` 写成 10 个独立实施任务，保存到 ASR 工作树的 `docs/superpowers/plans/2026-07-13-meeting-assistant-ui-redesign.md`。计划覆盖 UI 测试基础、视觉令牌、日历、共享会议工作台、文稿区、会议助手、编辑与阅读集成、设置/响应式、Playwright 与截图对照；实现尚未开始，下一步等待选择子任务驱动或当前任务内分批执行。
