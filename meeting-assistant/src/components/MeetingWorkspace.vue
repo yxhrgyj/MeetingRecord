@@ -32,7 +32,7 @@ defineEmits(['update:assistantOpen'])
           aria-label="会议助手"
           class="fixed inset-x-0 bottom-0 z-40 max-h-[78vh] min-h-[360px] overflow-auto rounded-t-panel border-t border-line bg-white/95 px-5 pb-7 pt-5 shadow-2xl backdrop-blur-xl transition-transform duration-200
                  md:inset-y-0 md:left-auto md:right-0 md:max-h-none md:w-[360px] md:rounded-none md:border-l md:border-t-0
-                 min-[1100px]:static min-[1100px]:z-auto min-[1100px]:h-full min-[1100px]:min-h-0 min-[1100px]:w-auto min-[1100px]:translate-y-0 min-[1100px]:border-l min-[1100px]:border-t-0 min-[1100px]:bg-white/75 min-[1100px]:px-[18px] min-[1100px]:shadow-none"
+                 min-[1100px]:static min-[1100px]:z-auto min-[1100px]:h-full min-[1100px]:min-h-0 min-[1100px]:w-auto min-[1100px]:translate-x-0 min-[1100px]:translate-y-0 min-[1100px]:border-l min-[1100px]:border-t-0 min-[1100px]:bg-white/75 min-[1100px]:px-[18px] min-[1100px]:shadow-none"
           :class="assistantOpen ? 'translate-y-0 md:translate-x-0' : 'translate-y-full md:translate-x-full md:translate-y-0'"
         >
           <button

@@ -15,6 +15,7 @@ describe('CalendarToolbar', () => {
     await wrapper.get('[data-view="week"]').trigger('click')
     await wrapper.get('[aria-label="上一时间段"]').trigger('click')
     await wrapper.get('[data-action="today"]').trigger('click')
+    expect(wrapper.get('[data-action="create"]').attributes('aria-label')).toBe('新建会议')
     await wrapper.get('[data-action="create"]').trigger('click')
 
     expect(wrapper.emitted('update:view')[0]).toEqual(['week'])

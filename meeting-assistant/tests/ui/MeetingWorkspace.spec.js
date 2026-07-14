@@ -15,7 +15,9 @@ describe('MeetingWorkspace', () => {
     })
 
     expect(wrapper.get('[data-region="document"]').text()).toContain('Document')
-    expect(wrapper.get('[data-region="assistant"]').text()).toContain('Assistant')
+    const assistant = wrapper.get('[data-region="assistant"]')
+    expect(assistant.text()).toContain('Assistant')
+    expect(assistant.classes()).toContain('min-[1100px]:translate-x-0')
 
     await wrapper.get('[data-action="close-assistant"]').trigger('click')
 

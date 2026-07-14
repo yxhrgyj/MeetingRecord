@@ -111,7 +111,14 @@ onUnmounted(() => document.removeEventListener('keydown', handleDocumentKeydown)
             </div>
           </div>
 
-          <button type="button" data-action="create" class="btn-primary h-8 px-3 text-xs" @click="$emit('create')">
+          <button
+            type="button"
+            data-action="create"
+            class="btn-primary h-8 px-3 text-xs"
+            aria-label="新建会议"
+            title="新建会议"
+            @click="$emit('create')"
+          >
             <Plus :size="15" />
             <span class="hidden sm:inline">新建会议</span>
           </button>
