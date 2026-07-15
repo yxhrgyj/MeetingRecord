@@ -6,10 +6,21 @@ import { fileURLToPath } from 'url'
 import { randomUUID } from 'crypto'
 import { DOCX_MIME_TYPE, meetingToDocxBlob, monthToDocxBlob } from './functions/_shared/docxExport.js'
 import { downloadContentDisposition } from './functions/_shared/meetings.js'
-import { finishRecordingPipeline, saveRecordingChunk, startRecordingSession } from './server/localRecording.js'
+import {
+  finalizeUploadedAudioFile,
+  listRecordingJobs,
+  readRecordingJob,
+  saveRecordingChunk,
+  saveUploadedAudioChunk,
+  startAudioUploadJob,
+  startAudioUploadSession,
+  startRecordingJob,
+  startRecordingSession
+} from './server/localRecording.js'
 import { buildSummarizerOptions, summarizeWithOllama } from './server/ollamaSummarizer.js'
 import { proxyAsrTranscription } from './server/asrProxy.js'
 import { requireAccessToken } from './serverAuth.js'
+import { registerSummaryRoutes } from './server/summaryRoutes.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -17,6 +28,7 @@ const __dirname = path.dirname(__filename)
 const app = express()
 const PORT = process.env.PORT || 3001
 const ASR_BASE_URL = process.env.ASR_BASE_URL || 'http://127.0.0.1:8000'
+const AUDIO_UPLOAD_CHUNK_LIMIT = '20mb'
 
 app.use(cors())
 app.use(express.json())
@@ -139,6 +151,68 @@ app.post('/api/local/recordings/start', async (req, res) => {
   }
 })
 
+app.get('/api/local/recordings', async (req, res) => {
+  try {
+    res.json(await listRecordingJobs({ recordingsDir: RECORDINGS_DIR }))
+  } catch (error) {
+    console.error('Local recording list failed:', error)
+    res.status(500).json({ message: error?.message || 'Failed to list recording jobs.' })
+  }
+})
+
+app.post('/api/local/uploads/start', async (req, res) => {
+  try {
+    const session = await startAudioUploadSession({
+      recordingsDir: RECORDINGS_DIR,
+      filename: req.body?.filename,
+      mimeType: req.body?.mimeType,
+      size: req.body?.size,
+      title: req.body?.title
+    })
+    res.status(201).json(session)
+  } catch (error) {
+    console.error('Local audio upload start failed:', error)
+    res.status(400).json({ message: error?.message || 'Failed to start audio upload.' })
+  }
+})
+
+app.post('/api/local/uploads/:id/chunks', express.raw({ type: '*/*', limit: AUDIO_UPLOAD_CHUNK_LIMIT }), async (req, res) => {
+  try {
+    const chunk = await saveUploadedAudioChunk({
+      recordingsDir: RECORDINGS_DIR,
+      uploadId: req.params.id,
+      index: req.query.index,
+      data: req.body
+    })
+    res.status(201).json(chunk)
+  } catch (error) {
+    console.error('Local audio upload chunk failed:', error)
+    res.status(400).json({ message: error?.message || 'Failed to store audio upload chunk.' })
+  }
+})
+
+app.post('/api/local/uploads/:id/finish', async (req, res) => {
+  try {
+    await finalizeUploadedAudioFile({
+      recordingsDir: RECORDINGS_DIR,
+      uploadId: req.params.id,
+      chunkCount: req.body?.chunkCount
+    })
+    const job = await startAudioUploadJob({
+      recordingsDir: RECORDINGS_DIR,
+      uploadId: req.params.id,
+      asrBaseUrl: ASR_BASE_URL
+    })
+    if (job.status === 'completed') {
+      return res.json({ id: job.id, status: 'completed', result: job.result })
+    }
+    res.status(202).json({ id: job.id, status: job.status, error: job.error || '' })
+  } catch (error) {
+    console.error('Local audio upload finish failed:', error)
+    res.status(400).json({ message: error?.message || 'Failed to finish audio upload.' })
+  }
+})
+
 app.post('/api/local/recordings/:id/chunks', express.raw({ type: '*/*', limit: '100mb' }), async (req, res) => {
   try {
     const chunk = await saveRecordingChunk({
@@ -157,26 +231,49 @@ app.post('/api/local/recordings/:id/chunks', express.raw({ type: '*/*', limit: '
 
 app.post('/api/local/recordings/:id/finish', async (req, res) => {
   try {
-    const summarizerOptions = buildSummarizerOptions(process.env)
-    const result = await finishRecordingPipeline({
+    const job = await startRecordingJob({
       recordingsDir: RECORDINGS_DIR,
       recordingId: req.params.id,
       asrBaseUrl: ASR_BASE_URL,
-      summarizeFn: (content) => summarizeWithOllama(content, summarizerOptions)
+      summarizeRecording: false
     })
-    res.json({
-      recording: {
-        filename: result.recording.filename,
-        size: result.recording.size
-      },
-      asr: result.asr,
-      transcript: result.transcript,
-      summary: result.summary,
-      model: summarizerOptions.model
-    })
+    if (job.status === 'completed') {
+      return res.json({ id: job.id, status: 'completed', result: job.result })
+    }
+    res.status(202).json({ id: job.id, status: job.status, error: job.error || '' })
   } catch (error) {
     console.error('Local recording finish failed:', error)
     res.status(503).json({ message: error?.message || 'Failed to finish local recording.' })
+  }
+})
+
+app.post('/api/local/recordings/:id/retry', async (req, res) => {
+  try {
+    const job = await startRecordingJob({
+      recordingsDir: RECORDINGS_DIR,
+      recordingId: req.params.id,
+      asrBaseUrl: ASR_BASE_URL,
+      summarizeRecording: false,
+      retry: true
+    })
+    if (job.status === 'completed') {
+      return res.json({ id: job.id, status: 'completed', result: job.result })
+    }
+    res.status(202).json({ id: job.id, status: job.status, error: job.error || '' })
+  } catch (error) {
+    console.error('Local recording retry failed:', error)
+    res.status(503).json({ message: error?.message || 'Failed to retry local recording.' })
+  }
+})
+
+app.get('/api/local/recordings/:id/status', async (req, res) => {
+  try {
+    const job = await readRecordingJob({ recordingsDir: RECORDINGS_DIR, recordingId: req.params.id })
+    if (!job) return res.status(404).json({ message: 'Recording job not found.' })
+    res.json(job)
+  } catch (error) {
+    console.error('Local recording status failed:', error)
+    res.status(500).json({ message: error?.message || 'Failed to read recording status.' })
   }
 })
 
@@ -197,6 +294,8 @@ app.post('/api/summarize', async (req, res) => {
     })
   }
 })
+
+registerSummaryRoutes(app)
 
 // 获取指定月份的会议列表
 app.get('/api/meetings', (req, res) => {

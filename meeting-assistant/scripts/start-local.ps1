@@ -12,7 +12,7 @@ $LogDir = Join-Path $AppDir 'logs'
 $NodePort = 3001
 $AsrPort = 8000
 $OllamaPort = 11434
-$OllamaModel = if ($env:OLLAMA_MODEL) { $env:OLLAMA_MODEL } else { 'qwen3:8b' }
+$OllamaModel = if ($env:OLLAMA_MODEL) { $env:OLLAMA_MODEL } else { 'qwen3.5:9b' }
 $OllamaExe = Join-Path $env:LOCALAPPDATA 'Programs\Ollama\ollama.exe'
 
 New-Item -ItemType Directory -Force -Path $RuntimeDir, $LogDir | Out-Null

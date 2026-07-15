@@ -8,9 +8,82 @@ import {
   buildTranscriptForSummary,
   finishRecordingPipeline,
   finalizeRecordingFile,
+  finalizeUploadedAudioFile,
+  readRecordingJob,
   saveRecordingChunk,
+  saveUploadedAudioChunk,
+  startAudioUploadJob,
+  startRecordingJob,
+  startAudioUploadSession,
   startRecordingSession
 } from '../server/localRecording.js'
+
+test('uploaded audio chunks are reassembled in byte order without decoding them', async () => {
+  const recordingsDir = await mkdtemp(path.join(os.tmpdir(), 'meeting-upload-'))
+  try {
+    const session = await startAudioUploadSession({
+      recordingsDir,
+      id: 'upload-1',
+      filename: 'meeting.mp3',
+      mimeType: 'audio/mpeg',
+      size: 11,
+      title: '长会议'
+    })
+
+    await saveUploadedAudioChunk({ recordingsDir, uploadId: session.id, index: 1, data: Buffer.from('world') })
+    await saveUploadedAudioChunk({ recordingsDir, uploadId: session.id, index: 0, data: Buffer.from('hello ') })
+
+    const file = await finalizeUploadedAudioFile({ recordingsDir, uploadId: session.id })
+
+    assert.equal(file.filename, 'meeting.mp3')
+    assert.equal(file.mimeType, 'audio/mpeg')
+    assert.equal(await readFile(file.filePath, 'utf8'), 'hello world')
+  } finally {
+    await rm(recordingsDir, { recursive: true, force: true })
+  }
+})
+
+test('uploaded audio job retries from the assembled source file', async () => {
+  const recordingsDir = await mkdtemp(path.join(os.tmpdir(), 'meeting-upload-job-'))
+  try {
+    const session = await startAudioUploadSession({
+      recordingsDir,
+      id: 'upload-job-1',
+      filename: 'meeting.wav',
+      mimeType: 'audio/wav',
+      size: 5
+    })
+    await saveUploadedAudioChunk({ recordingsDir, uploadId: session.id, index: 0, data: Buffer.from('audio') })
+    await finalizeUploadedAudioFile({ recordingsDir, uploadId: session.id, chunkCount: 1 })
+
+    let calls = 0
+    const fetchImpl = async (url, options) => {
+      calls += 1
+      assert.equal(url, 'http://asr.test/transcribe-file')
+      assert.equal(options.headers['X-Filename'], 'meeting.wav')
+      return Response.json({ text: 'uploaded transcript', segments: [] })
+    }
+
+    await startAudioUploadJob({
+      recordingsDir,
+      uploadId: session.id,
+      asrBaseUrl: 'http://asr.test',
+      fetchImpl
+    })
+
+    let completed = await readRecordingJob({ recordingsDir, recordingId: session.id })
+    for (let attempt = 0; attempt < 100 && completed?.status !== 'completed'; attempt += 1) {
+      await new Promise(resolve => setTimeout(resolve, 10))
+      completed = await readRecordingJob({ recordingsDir, recordingId: session.id })
+    }
+
+    assert.equal(completed.status, 'completed')
+    assert.equal(completed.result.transcript, 'uploaded transcript')
+    assert.equal(calls, 1)
+  } finally {
+    await rm(recordingsDir, { recursive: true, force: true })
+  }
+})
 
 test('local recording stores ordered chunks and finalizes a webm file', async () => {
   const recordingsDir = await mkdtemp(path.join(os.tmpdir(), 'meeting-recording-'))
@@ -96,8 +169,12 @@ test('finishRecordingPipeline transcribes finalized audio then summarizes transc
       summarizeFn
     })
 
-    assert.equal(calls[0].url, 'http://asr.test/transcribe')
+    assert.equal(calls[0].url, 'http://asr.test/transcribe-file')
     assert.equal(calls[0].options.method, 'POST')
+    assert.equal(calls[0].options.headers['Content-Type'], 'audio/webm')
+    assert.equal(calls[0].options.headers['X-Filename'], 'meeting.webm')
+    assert.equal(calls[0].options.duplex, 'half')
+    assert.equal(typeof calls[0].options.body.pipe, 'function')
     assert.match(summarized[0], /讨论预算五百一十万/)
     assert.equal(result.summary, '## 会议纪要草稿\n\n### 关键结论\n- 预算待确认')
     assert.equal(result.asr.text, '讨论预算五百一十万')
@@ -142,6 +219,188 @@ test('finishRecordingPipeline skips summarization when ASR returns no transcript
     assert.equal(result.transcript, '')
     assert.equal(result.summary, '')
     assert.equal(summarizeCalled, false)
+  } finally {
+    await rm(recordingsDir, { recursive: true, force: true })
+  }
+})
+
+test('startRecordingJob returns quickly and persists the completed result', async () => {
+  const recordingsDir = await mkdtemp(path.join(os.tmpdir(), 'meeting-recording-'))
+  try {
+    const session = await startRecordingSession({ recordingsDir, id: 'meeting-job' })
+    await saveRecordingChunk({
+      recordingsDir,
+      recordingId: session.id,
+      index: 0,
+      data: Buffer.from('webm'),
+      mimeType: 'audio/webm'
+    })
+
+    const job = await startRecordingJob({
+      recordingsDir,
+      recordingId: session.id,
+      asrBaseUrl: 'http://asr.test',
+      fetchImpl: async () => new Response(JSON.stringify({
+        text: '转写内容',
+        segments: [{ startSeconds: 0, endSeconds: 2, text: '转写内容' }]
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      }),
+      summarizeFn: async () => '## 会议纪要草稿\n\n### 关键结论\n- 已完成'
+    })
+
+    assert.equal(job.id, session.id)
+    assert.ok(['queued', 'processing', 'completed'].includes(job.status))
+
+    let completed = await readRecordingJob({ recordingsDir, recordingId: session.id })
+    for (let attempt = 0; attempt < 100 && completed?.status !== 'completed'; attempt += 1) {
+      await new Promise(resolve => setTimeout(resolve, 10))
+      completed = await readRecordingJob({ recordingsDir, recordingId: session.id })
+    }
+
+    assert.equal(completed.status, 'completed')
+    assert.equal(completed.result.summary, '## 会议纪要草稿\n\n### 关键结论\n- 已完成')
+  } finally {
+    await rm(recordingsDir, { recursive: true, force: true })
+  }
+})
+
+test('startRecordingJob persists a failed status when processing errors', async () => {
+  const recordingsDir = await mkdtemp(path.join(os.tmpdir(), 'meeting-recording-'))
+  try {
+    const session = await startRecordingSession({ recordingsDir, id: 'meeting-failed-job' })
+    await saveRecordingChunk({
+      recordingsDir,
+      recordingId: session.id,
+      index: 0,
+      data: Buffer.from('webm'),
+      mimeType: 'audio/webm'
+    })
+
+    await startRecordingJob({
+      recordingsDir,
+      recordingId: session.id,
+      asrBaseUrl: 'http://asr.test',
+      fetchImpl: async () => new Response(JSON.stringify({ detail: 'ASR unavailable' }), {
+        status: 503,
+        headers: { 'Content-Type': 'application/json' }
+      }),
+      summarizeFn: async () => 'should not happen'
+    })
+
+    let failed = await readRecordingJob({ recordingsDir, recordingId: session.id })
+    for (let attempt = 0; attempt < 100 && failed?.status !== 'failed'; attempt += 1) {
+      await new Promise(resolve => setTimeout(resolve, 10))
+      failed = await readRecordingJob({ recordingsDir, recordingId: session.id })
+    }
+
+    assert.equal(failed.status, 'failed')
+    assert.equal(failed.error, 'ASR unavailable')
+  } finally {
+    await rm(recordingsDir, { recursive: true, force: true })
+  }
+})
+
+test('startRecordingJob completes ASR-only jobs without calling a summarizer', async () => {
+  const recordingsDir = await mkdtemp(path.join(os.tmpdir(), 'meeting-recording-'))
+  try {
+    const session = await startRecordingSession({ recordingsDir, id: 'meeting-asr-only' })
+    await saveRecordingChunk({
+      recordingsDir,
+      recordingId: session.id,
+      index: 0,
+      data: Buffer.from('webm'),
+      mimeType: 'audio/webm'
+    })
+    let summarizeCalled = false
+
+    await startRecordingJob({
+      recordingsDir,
+      recordingId: session.id,
+      asrBaseUrl: 'http://asr.test',
+      fetchImpl: async () => new Response(JSON.stringify({
+        text: 'first segment',
+        segments: [{ startSeconds: 0, endSeconds: 2, text: 'first segment' }]
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      }),
+      summarizeFn: async () => {
+        summarizeCalled = true
+        return 'must not run'
+      },
+      summarizeRecording: false
+    })
+
+    let completed = await readRecordingJob({ recordingsDir, recordingId: session.id })
+    for (let attempt = 0; attempt < 100 && completed?.status !== 'completed'; attempt += 1) {
+      await new Promise(resolve => setTimeout(resolve, 10))
+      completed = await readRecordingJob({ recordingsDir, recordingId: session.id })
+    }
+
+    assert.equal(completed.status, 'completed')
+    assert.equal(completed.result.transcript, '[00:00-00:02]\nfirst segment')
+    assert.equal(Object.hasOwn(completed.result, 'summary'), false)
+    assert.equal(summarizeCalled, false)
+  } finally {
+    await rm(recordingsDir, { recursive: true, force: true })
+  }
+})
+
+test('retryRecordingJob requeues a failed ASR-only recording', async () => {
+  const recordingsDir = await mkdtemp(path.join(os.tmpdir(), 'meeting-recording-'))
+  try {
+    const session = await startRecordingSession({ recordingsDir, id: 'meeting-retry' })
+    await saveRecordingChunk({ recordingsDir, recordingId: session.id, index: 0, data: Buffer.from('webm') })
+    let attempts = 0
+    const fetchImpl = async () => {
+      attempts += 1
+      if (attempts === 1) {
+        return new Response(JSON.stringify({ detail: 'temporary ASR failure' }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/json' }
+        })
+      }
+      return new Response(JSON.stringify({ text: 'retry succeeded', segments: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    }
+
+    await startRecordingJob({
+      recordingsDir,
+      recordingId: session.id,
+      asrBaseUrl: 'http://asr.test',
+      fetchImpl,
+      summarizeRecording: false
+    })
+
+    let failed = await readRecordingJob({ recordingsDir, recordingId: session.id })
+    for (let attempt = 0; attempt < 100 && failed?.status !== 'failed'; attempt += 1) {
+      await new Promise(resolve => setTimeout(resolve, 10))
+      failed = await readRecordingJob({ recordingsDir, recordingId: session.id })
+    }
+    assert.equal(failed.status, 'failed')
+
+    const retried = await startRecordingJob({
+      recordingsDir,
+      recordingId: session.id,
+      asrBaseUrl: 'http://asr.test',
+      fetchImpl,
+      summarizeRecording: false,
+      retry: true
+    })
+    assert.equal(retried.status, 'queued')
+
+    let completed = await readRecordingJob({ recordingsDir, recordingId: session.id })
+    for (let attempt = 0; attempt < 100 && completed?.status !== 'completed'; attempt += 1) {
+      await new Promise(resolve => setTimeout(resolve, 10))
+      completed = await readRecordingJob({ recordingsDir, recordingId: session.id })
+    }
+    assert.equal(completed.status, 'completed')
+    assert.equal(completed.result.transcript, 'retry succeeded')
+    assert.equal(attempts, 2)
   } finally {
     await rm(recordingsDir, { recursive: true, force: true })
   }

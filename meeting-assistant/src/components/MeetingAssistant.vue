@@ -21,7 +21,10 @@ const props = defineProps({
   hasContent: Boolean,
   canExport: Boolean,
   retryKind: { type: String, default: '' },
-  modelLabel: { type: String, default: 'Qwen3 8B' }
+  modelLabel: { type: String, default: 'qwen3.5:9b' },
+  recordingSegments: { type: Array, default: () => [] },
+  pendingRecordingCount: { type: Number, default: 0 },
+  persistedRecordingJobs: { type: Array, default: () => [] }
 })
 
 const emit = defineEmits([
@@ -30,12 +33,18 @@ const emit = defineEmits([
   'summarize',
   'export-markdown',
   'export-docx',
-  'retry'
+  'retry',
+  'retry-segment',
+  'retry-persisted'
 ])
 
 const busy = computed(() => (
   props.isFinishingRecording || props.isTranscribing || props.isSummarizing
 ))
+
+const hasIncompleteSegments = computed(() => props.recordingSegments.some(segment => (
+  ['queued', 'processing', 'failed'].includes(segment?.status)
+)))
 
 const processPhase = computed(() => {
   if (props.isFinishingRecording || props.isTranscribing) return 'transcribe'
@@ -54,14 +63,29 @@ const processTone = computed(() => {
 })
 
 const retryable = computed(() => ['record', 'summarize'].includes(props.retryKind))
-const recordDisabled = computed(() => busy.value && !props.isRecording)
-const uploadDisabled = computed(() => props.isRecording || busy.value)
-const summarizeDisabled = computed(() => !props.hasContent || props.isRecording || busy.value)
+const recordDisabled = computed(() => (
+  props.isFinishingRecording || props.isTranscribing || props.isSummarizing
+))
+const uploadDisabled = computed(() => props.isRecording || props.isFinishingRecording || props.isSummarizing)
+const summarizeDisabled = computed(() => (
+  !props.hasContent || props.isRecording || busy.value || hasIncompleteSegments.value
+))
 
 const recordingLabel = computed(() => {
   if (props.isFinishingRecording) return '正在整理录音…'
-  return props.isRecording ? '结束会议录音' : '开始会议录音'
+  return props.isRecording
+    ? '结束会议录音（当前段）'
+    : (props.recordingSegments.length ? '开始下一段录音' : '开始会议录音')
 })
+
+function segmentStatusLabel(status) {
+  return {
+    queued: '排队中',
+    processing: '转写中',
+    completed: '已完成',
+    failed: '失败'
+  }[status] || '未开始'
+}
 
 function formatDuration(seconds) {
   const safe = Math.max(0, Number(seconds) || 0)
@@ -111,6 +135,54 @@ function retry() {
         <span>{{ recordingLabel }}</span>
         <span v-if="isRecording" class="ml-auto font-mono text-[10px] text-recording">{{ formatDuration(recordingSeconds) }}</span>
       </button>
+
+      <div v-if="recordingSegments.length" class="mt-3 space-y-1.5" data-region="recording-segments">
+        <div class="flex items-center justify-between text-[10px] text-muted">
+          <span>录音段处理</span>
+          <span>{{ pendingRecordingCount ? `${pendingRecordingCount} 段处理中` : '可生成总纪要' }}</span>
+        </div>
+        <div
+          v-for="segment in recordingSegments"
+          :key="segment.id || segment.index"
+          class="flex min-h-7 items-center gap-2 rounded-control border border-line bg-canvas px-2 text-[10px]"
+        >
+          <span class="font-medium text-secondary">第 {{ segment.index + 1 }} 段</span>
+          <span class="text-muted">{{ segmentStatusLabel(segment.status) }}</span>
+          <button
+            v-if="segment.status === 'failed'"
+            type="button"
+            data-action="retry-segment"
+            class="ml-auto font-medium text-primary-600 hover:text-primary-800"
+            @click="$emit('retry-segment', segment.index)"
+          >
+            重试
+          </button>
+        </div>
+      </div>
+
+      <div v-if="persistedRecordingJobs.length" class="mt-3 space-y-1.5" data-region="persisted-recordings">
+        <div class="flex items-center justify-between text-[10px] text-muted">
+          <span>已保存的录音任务</span>
+          <span>{{ persistedRecordingJobs.length }} 条</span>
+        </div>
+        <div
+          v-for="job in persistedRecordingJobs"
+          :key="job.id"
+          class="flex min-h-8 items-center gap-2 rounded-control border border-line bg-canvas px-2 text-[10px]"
+        >
+          <span class="min-w-0 flex-1 truncate text-secondary">{{ job.id }}</span>
+          <span class="text-muted">{{ segmentStatusLabel(job.status) }}</span>
+          <button
+            v-if="job.status === 'failed'"
+            type="button"
+            data-action="retry-persisted"
+            class="font-medium text-primary-600 hover:text-primary-800"
+            @click="$emit('retry-persisted', job.id)"
+          >
+            重新转写
+          </button>
+        </div>
+      </div>
 
       <button
         type="button"
