@@ -1,7 +1,6 @@
-export function canAutoSaveMeeting({ title, date, summary, transcript } = {}) {
+export function canAutoSaveMeeting({ title, date } = {}) {
   return Boolean(
     String(title || '').trim() &&
-    String(date || '').trim() &&
-    (String(summary || '').trim() || String(transcript || '').trim())
+    String(date || '').trim()
   )
 }
