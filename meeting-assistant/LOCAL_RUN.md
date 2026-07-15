@@ -96,3 +96,6 @@ http://台式机IP:3001
 ```
 
 如果不在同一局域网，需要 Cloudflare Tunnel、Tailscale 或其他安全通道。
+# Batch Existing Audio
+
+For one meeting split across existing files, choose Batch upload audio, verify the displayed order, then start processing. Retry any failed file before generating the meeting summary.

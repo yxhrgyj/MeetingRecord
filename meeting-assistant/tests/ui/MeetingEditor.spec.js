@@ -207,4 +207,24 @@ describe('MeetingEditor integration', () => {
 
     wrapper.unmount()
   })
+
+  it('shows a selected audio batch and blocks summary until it completes', async () => {
+    const wrapper = mount(MeetingEditor, { props: { initialData } })
+    const input = wrapper.get('input[data-input="audio-batch"]')
+    Object.defineProperty(input.element, 'files', {
+      configurable: true,
+      value: [
+        new File(['second'], 'meeting-10.wav', { type: 'audio/wav' }),
+        new File(['first'], 'meeting-2.wav', { type: 'audio/wav' })
+      ]
+    })
+
+    await input.trigger('change')
+
+    expect(wrapper.get('[data-region="audio-batch"]').text()).toContain('meeting-2.wav')
+    expect(wrapper.get('[data-region="audio-batch"]').text()).toContain('meeting-10.wav')
+    expect(wrapper.get('[data-action="summarize"]').attributes('disabled')).toBeDefined()
+
+    wrapper.unmount()
+  })
 })

@@ -1,10 +1,15 @@
 <script setup>
 import { computed } from 'vue'
 import {
+  ArrowDown,
+  ArrowUp,
+  Files,
   FileDown,
   FileText,
   Mic,
+  RotateCcw,
   Sparkles,
+  Trash2,
   Upload
 } from '@lucide/vue'
 import MeetingProcessStatus from './MeetingProcessStatus.vue'
@@ -24,12 +29,19 @@ const props = defineProps({
   modelLabel: { type: String, default: 'qwen3.5:9b' },
   recordingSegments: { type: Array, default: () => [] },
   pendingRecordingCount: { type: Number, default: 0 },
-  persistedRecordingJobs: { type: Array, default: () => [] }
+  persistedRecordingJobs: { type: Array, default: () => [] },
+  batchItems: { type: Array, default: () => [] },
+  batchActive: Boolean
 })
 
 const emit = defineEmits([
   'record-toggle',
   'upload',
+  'batch-upload',
+  'batch-start',
+  'batch-move',
+  'batch-remove',
+  'batch-retry',
   'summarize',
   'export-markdown',
   'export-docx',
@@ -39,12 +51,14 @@ const emit = defineEmits([
 ])
 
 const busy = computed(() => (
-  props.isFinishingRecording || props.isTranscribing || props.isSummarizing
+  props.isFinishingRecording || props.isTranscribing || props.isSummarizing || props.batchActive
 ))
 
 const hasIncompleteSegments = computed(() => props.recordingSegments.some(segment => (
   ['queued', 'processing', 'failed'].includes(segment?.status)
 )))
+
+const hasIncompleteBatch = computed(() => props.batchItems.some(item => item?.status !== 'completed'))
 
 const processPhase = computed(() => {
   if (props.isFinishingRecording || props.isTranscribing) return 'transcribe'
@@ -66,10 +80,12 @@ const retryable = computed(() => ['record', 'summarize'].includes(props.retryKin
 const recordDisabled = computed(() => (
   props.isFinishingRecording || props.isTranscribing || props.isSummarizing
 ))
-const uploadDisabled = computed(() => props.isRecording || props.isFinishingRecording || props.isSummarizing)
+const uploadDisabled = computed(() => props.isRecording || props.isFinishingRecording || props.isSummarizing || props.batchActive)
 const summarizeDisabled = computed(() => (
-  !props.hasContent || props.isRecording || busy.value || hasIncompleteSegments.value
+  !props.hasContent || props.isRecording || busy.value || hasIncompleteSegments.value || hasIncompleteBatch.value
 ))
+
+const canStartBatch = computed(() => props.batchItems.some(item => item?.status === 'selected'))
 
 const recordingLabel = computed(() => {
   if (props.isFinishingRecording) return '正在整理录音…'
@@ -79,6 +95,8 @@ const recordingLabel = computed(() => {
 })
 
 function segmentStatusLabel(status) {
+  if (status === 'selected') return '待处理'
+  if (status === 'uploading') return '上传中'
   return {
     queued: '排队中',
     processing: '转写中',
@@ -194,6 +212,78 @@ function retry() {
         <span>上传已有音频</span>
         <Upload :size="14" class="text-muted" />
       </button>
+
+      <button
+        type="button"
+        data-action="batch-upload"
+        class="command-button mt-2 h-10 w-full justify-between"
+        :disabled="uploadDisabled"
+        @click="$emit('batch-upload')"
+      >
+        <span>批量上传音频</span>
+        <Files :size="14" class="text-muted" />
+      </button>
+
+      <div v-if="batchItems.length" class="mt-3 space-y-1.5" data-region="audio-batch">
+        <div class="flex items-center justify-between text-[10px] text-muted">
+          <span>批量音频</span>
+          <span>{{ batchItems.length }} 个文件</span>
+        </div>
+        <div
+          v-for="item in batchItems"
+          :key="item.id"
+          class="flex min-h-8 items-center gap-1.5 rounded-control border border-line bg-canvas px-2 text-[10px]"
+        >
+          <span class="min-w-0 flex-1 truncate text-secondary">{{ item.index + 1 }}. {{ item.filename }}</span>
+          <span class="text-muted">{{ segmentStatusLabel(item.status) }}</span>
+          <button
+            v-if="item.status === 'selected' && item.index > 0"
+            type="button"
+            class="icon-button size-6"
+            :aria-label="`Move ${item.filename} up`"
+            @click="$emit('batch-move', item.index, item.index - 1)"
+          >
+            <ArrowUp :size="12" />
+          </button>
+          <button
+            v-if="item.status === 'selected' && item.index < batchItems.length - 1"
+            type="button"
+            class="icon-button size-6"
+            :aria-label="`Move ${item.filename} down`"
+            @click="$emit('batch-move', item.index, item.index + 1)"
+          >
+            <ArrowDown :size="12" />
+          </button>
+          <button
+            v-if="item.status === 'selected'"
+            type="button"
+            class="icon-button size-6"
+            :aria-label="`Remove ${item.filename}`"
+            @click="$emit('batch-remove', item.index)"
+          >
+            <Trash2 :size="12" />
+          </button>
+          <button
+            v-if="item.status === 'failed'"
+            type="button"
+            class="icon-button size-6 text-primary-600"
+            :aria-label="`Retry ${item.filename}`"
+            @click="$emit('batch-retry', item.index)"
+          >
+            <RotateCcw :size="12" />
+          </button>
+        </div>
+        <button
+          v-if="canStartBatch"
+          type="button"
+          data-action="batch-start"
+          class="btn-primary mt-2 h-9 w-full"
+          :disabled="batchActive"
+          @click="$emit('batch-start')"
+        >
+          开始批量转写
+        </button>
+      </div>
     </section>
 
     <section class="border-t border-line py-[18px]">
