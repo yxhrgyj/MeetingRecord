@@ -17,7 +17,7 @@ Allow users to select multiple existing audio files that belong to one meeting, 
 - A batch represents one meeting. The app never creates separate meeting records for individual audio files.
 - Existing single-file upload remains available and uses the same upload pipeline.
 - Browser-side audio concatenation is not used. Each source file is uploaded in 16 MB chunks, assembled and transcribed by the local agent, matching the existing large-audio path.
-- The batch state is retained in the editor while the page is open. The local agent remains the source of truth for queued and failed jobs after a refresh; the editor restores visible incomplete jobs through the existing job-list API.
+- The batch state is retained in the editor while the page is open. After a refresh, the existing persisted-job list continues to expose queued and failed local-agent jobs for retry; files that were selected but not yet uploaded must be selected again.
 - The meeting transcript is changed only when an item reaches completed. Retries do not append duplicate transcript content.
 
 ## Components
