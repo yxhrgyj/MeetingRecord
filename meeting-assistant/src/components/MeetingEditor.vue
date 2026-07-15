@@ -5,11 +5,13 @@ import { formatTranscriptForEditor, useAsr } from '@/composables/useAsr.js'
 import { useLocalRecording } from '@/composables/useLocalRecording.js'
 import { useSummarizer } from '@/composables/useSummarizer.js'
 import { useDateUtils } from '@/composables/useDateUtils.js'
+import { canAutoSaveMeeting } from '@/domain/meetingDraft.js'
 import {
   normalizeMeetingSummary,
   parseMeetingContent,
   serializeMeetingContent
 } from '@/domain/meetingContent.js'
+import { formatCompletedSegments } from '../../shared/longMeeting.js'
 import MeetingAssistant from '@/components/MeetingAssistant.vue'
 import MeetingDocument from '@/components/MeetingDocument.vue'
 import MeetingEditorToolbar from '@/components/MeetingEditorToolbar.vue'
@@ -52,10 +54,21 @@ const mediaStream = ref(null)
 const recordingSession = ref(null)
 const recordingChunkIndex = ref(0)
 const recordingUploads = ref([])
+const recordingSegments = ref([])
+const persistedRecordingJobs = ref([])
+const recordingNextIndex = ref(0)
+const recordingTranscriptBase = ref('')
+const stageSummaries = ref([])
 const recordingTimer = ref(null)
 const recordingSeconds = ref(0)
 const autoSaveTimer = ref(null)
 const autoSaveLabel = ref('')
+
+const pendingRecordingCount = computed(() => recordingSegments.value.filter(segment => (
+  ['queued', 'processing'].includes(segment.status)
+)).length)
+
+const hasFailedRecording = computed(() => recordingSegments.value.some(segment => segment.status === 'failed'))
 
 const retryKind = computed(() => {
   if (/失败|不可用|异常|错误/.test(summaryStatus.value)) return 'summarize'
@@ -216,8 +229,21 @@ async function handleAudioSelected(event) {
   isTranscribing.value = true
   asrStatus.value = 'ASR 转写中...'
   try {
-    const result = await asr.transcribeAudio(file)
-    const transcript = formatTranscriptForEditor(result)
+    const result = localRecording.transcribeUploadedAudio
+      ? await localRecording.transcribeUploadedAudio(file, {
+        title: form.title,
+        date: form.date,
+        startTime: form.startTime
+      }, {
+        onProgress: ({ phase, index, total }) => {
+          if (phase === 'upload') asrStatus.value = `上传音频 ${index + 1}/${total}...`
+        },
+        onStatus: (job) => {
+          if (job.status === 'processing') asrStatus.value = '音频转写中...'
+        }
+      })
+      : await asr.transcribeAudio(file)
+    const transcript = result.transcript || formatTranscriptForEditor(result.asr || result)
     if (!transcript) {
       asrStatus.value = 'ASR 未识别到文本'
       return
@@ -234,6 +260,46 @@ async function handleAudioSelected(event) {
     asrStatus.value = error?.message || 'ASR 服务不可用'
   } finally {
     isTranscribing.value = false
+  }
+}
+
+async function loadPersistedRecordingJobs() {
+  if (!localRecording.listRecordingJobs) return
+  try {
+    const jobs = await localRecording.listRecordingJobs()
+    persistedRecordingJobs.value = (Array.isArray(jobs) ? jobs : [])
+      .filter(job => ['queued', 'processing', 'failed'].includes(job.status))
+  } catch (error) {
+    console.warn('Failed to load persisted recording jobs:', error)
+  }
+}
+
+async function retryPersistedRecording(recordingId) {
+  if (!localRecording.retryRecording) return
+  const job = persistedRecordingJobs.value.find(item => item.id === recordingId)
+  if (!job) return
+  try {
+    if (!recordingSegments.value.length) recordingTranscriptBase.value = form.transcript
+    const queued = await localRecording.retryRecording(recordingId)
+    const segment = {
+      id: recordingId,
+      index: recordingNextIndex.value,
+      status: queued.status || 'queued',
+      transcript: '',
+      error: ''
+    }
+    recordingNextIndex.value += 1
+    upsertRecordingSegment(segment)
+    persistedRecordingJobs.value = persistedRecordingJobs.value.map(item => (
+      item.id === recordingId ? { ...item, status: segment.status, error: '' } : item
+    ))
+    if (localRecording.waitForRecording) void monitorRecordingSegment(segment)
+  } catch (error) {
+    persistedRecordingJobs.value = persistedRecordingJobs.value.map(item => (
+      item.id === recordingId
+        ? { ...item, status: 'failed', error: error?.message || '重新转写失败' }
+        : item
+    ))
   }
 }
 
@@ -293,8 +359,55 @@ function appendRecordingResult(result) {
   nextTick(() => documentRef.value?.scrollToSectionTop?.())
 }
 
+function rebuildRecordedTranscript() {
+  const recordedTranscript = formatCompletedSegments(recordingSegments.value)
+  const baseTranscript = recordingTranscriptBase.value.trim()
+  form.transcript = baseTranscript
+    ? (recordedTranscript ? `${baseTranscript}\n\n${recordedTranscript}` : baseTranscript)
+    : recordedTranscript
+  if (recordedTranscript) activeSection.value = 'transcript'
+  nextTick(() => documentRef.value?.scrollToSectionTop?.())
+}
+
+function upsertRecordingSegment(segment) {
+  const existingIndex = recordingSegments.value.findIndex(item => item.id === segment.id)
+  if (existingIndex >= 0) {
+    recordingSegments.value[existingIndex] = { ...recordingSegments.value[existingIndex], ...segment }
+  } else {
+    recordingSegments.value.push(segment)
+  }
+  recordingSegments.value.sort((left, right) => left.index - right.index)
+  rebuildRecordedTranscript()
+}
+
+async function monitorRecordingSegment(segment) {
+  try {
+    const result = await localRecording.waitForRecording(segment.id, {
+      onStatus: (job) => upsertRecordingSegment({
+        ...segment,
+        status: job.status,
+        error: job.error || ''
+      })
+    })
+    const transcript = result.transcript || formatTranscriptForEditor(result.asr)
+    upsertRecordingSegment({ ...segment, status: 'completed', transcript: transcript || '', error: '' })
+    persistedRecordingJobs.value = persistedRecordingJobs.value.filter(item => item.id !== segment.id)
+    recordingStatus.value = `第 ${segment.index + 1} 段转写完成`
+  } catch (error) {
+    upsertRecordingSegment({
+      ...segment,
+      status: 'failed',
+      error: error?.message || '录音段转写失败'
+    })
+    persistedRecordingJobs.value = persistedRecordingJobs.value.map(item => (
+      item.id === segment.id ? { ...item, status: 'failed', error: error?.message || '录音段转写失败' } : item
+    ))
+    recordingStatus.value = `第 ${segment.index + 1} 段转写失败，可重试`
+  }
+}
+
 async function startMeetingRecording() {
-  if (isRecording.value || isFinishingRecording.value) return
+  if (isRecording.value || isFinishingRecording.value || isSummarizing.value) return
   if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
     recordingStatus.value = '当前浏览器不支持录音'
     return
@@ -317,8 +430,10 @@ async function startMeetingRecording() {
     })
 
     if (!form.startTime) recordStartTime()
+    if (!recordingSegments.value.length) recordingTranscriptBase.value = form.transcript
     mediaStream.value = stream
-    recordingSession.value = session
+    recordingSession.value = { ...session, index: recordingNextIndex.value }
+    recordingNextIndex.value += 1
     recordingChunkIndex.value = 0
     recordingUploads.value = []
     mediaRecorder.value = new MediaRecorder(stream, { mimeType })
@@ -333,7 +448,7 @@ async function startMeetingRecording() {
       })
       recordingUploads.value.push(upload)
     }
-    mediaRecorder.value.onstop = finishMeetingRecording
+    mediaRecorder.value.onstop = finishMeetingRecordingInBackground
     mediaRecorder.value.start(30000)
     isRecording.value = true
     recordingStatus.value = '录音中 00:00'
@@ -358,6 +473,50 @@ function stopMeetingRecording() {
   mediaRecorder.value.stop()
 }
 
+async function finishMeetingRecordingInBackground() {
+  const session = recordingSession.value
+  try {
+    stopRecordingTracks()
+    await Promise.all(recordingUploads.value)
+    const queued = localRecording.queueRecording
+      ? await localRecording.queueRecording(session.id)
+      : { id: session.id, status: 'processing' }
+    const segment = {
+      id: session.id,
+      index: session.index,
+      status: queued.status || 'queued',
+      transcript: '',
+      error: ''
+    }
+    upsertRecordingSegment(segment)
+    recordingStatus.value = `第 ${session.index + 1} 段已排队，可继续录音`
+    if (queued.status === 'completed' && queued.result) {
+      upsertRecordingSegment({
+        ...segment,
+        status: 'completed',
+        transcript: queued.result.transcript || formatTranscriptForEditor(queued.result.asr)
+      })
+    } else if (localRecording.waitForRecording) {
+      void monitorRecordingSegment(segment)
+    }
+  } catch (error) {
+    console.error('会议录音段排队失败:', error)
+    upsertRecordingSegment({
+      id: session.id,
+      index: session.index,
+      status: 'failed',
+      transcript: '',
+      error: error?.message || '会议录音段排队失败'
+    })
+    recordingStatus.value = `第 ${session.index + 1} 段排队失败，可重试`
+  } finally {
+    isFinishingRecording.value = false
+    mediaRecorder.value = null
+    recordingSession.value = null
+    recordingUploads.value = []
+  }
+}
+
 async function finishMeetingRecording() {
   try {
     stopRecordingTracks()
@@ -380,7 +539,20 @@ async function finishMeetingRecording() {
 }
 
 // ===== LLM 会议纪要整理 =====
-async function handleSummarize() {
+async function retryRecordingSegment(index) {
+  const segment = recordingSegments.value.find(item => item.index === index)
+  if (!segment || segment.status !== 'failed') return
+  try {
+    const queued = await localRecording.queueRecording(segment.id, { retry: true })
+    const nextSegment = { ...segment, status: queued.status || 'queued', error: '' }
+    upsertRecordingSegment(nextSegment)
+    if (localRecording.waitForRecording) void monitorRecordingSegment(nextSegment)
+  } catch (error) {
+    upsertRecordingSegment({ ...segment, status: 'failed', error: error?.message || '录音段重试失败' })
+  }
+}
+
+async function handleSummarize({ resume = false } = {}) {
   if (isSummarizing.value) return
   if (!form.transcript.trim()) {
     summaryStatus.value = '没有可整理的完整转写'
@@ -390,10 +562,41 @@ async function handleSummarize() {
     return
   }
 
+  if (isRecording.value || isFinishingRecording.value || pendingRecordingCount.value || hasFailedRecording.value) {
+    summaryStatus.value = hasFailedRecording.value
+      ? '请先重试失败的录音段'
+      : '请等待全部录音段转写完成'
+    return
+  }
+
+  const resumeStageSummaries = resume ? stageSummaries.value.slice() : []
+  if (!resume) stageSummaries.value = []
   isSummarizing.value = true
   summaryStatus.value = '纪要整理中...'
   try {
-    const result = await summarizer.summarizeContent(form.transcript)
+    let result = summarizer.summarizeLongMeeting
+      ? await summarizer.summarizeLongMeeting(form.transcript, {
+        existingStageSummaries: resumeStageSummaries,
+        startStageIndex: resumeStageSummaries.length,
+        onStageSummary: (stage) => {
+          const existingIndex = stageSummaries.value.findIndex(item => item.index === stage.index)
+          if (existingIndex >= 0) stageSummaries.value[existingIndex] = stage
+          else stageSummaries.value.push(stage)
+          stageSummaries.value.sort((left, right) => left.index - right.index)
+        },
+        onProgress: (progress) => {
+          if (progress.phase === 'stage') {
+            summaryStatus.value = `正在生成阶段摘要 ${progress.index + 1}/${progress.total}...`
+          } else {
+            summaryStatus.value = '正在合并生成总纪要...'
+          }
+        }
+      })
+      : null
+    if (!result && summarizer.summarizeContent) {
+      result = await summarizer.summarizeContent(form.transcript)
+    }
+    stageSummaries.value = result.stageSummaries || []
     form.summary = normalizeMeetingSummary(result.summary)
     activeSection.value = 'summary'
     summaryStatus.value = '纪要已生成'
@@ -423,7 +626,7 @@ function stopAutoSave() {
 
 async function doAutoSave() {
   // 没有任何实质内容时不保存
-  if (!form.title.trim() && !form.summary.trim() && !form.transcript.trim()) return
+  if (!canAutoSaveMeeting(form)) return
 
   const prevLabel = autoSaveLabel.value
   autoSaveLabel.value = '保存中…'
@@ -465,7 +668,7 @@ function handleExport(format = 'docx') {
 
 function handleRetry(kind) {
   if (kind === 'record') startMeetingRecording()
-  if (kind === 'summarize') handleSummarize()
+  if (kind === 'summarize') handleSummarize({ resume: true })
 }
 
 // ===== 向上查找列表祖先（用于 Shift+Enter 软换行后仍能续号）=====
@@ -656,6 +859,7 @@ function onKeydown(e) {
 
 onMounted(() => {
   initForm()
+  void loadPersistedRecordingJobs()
   startAutoSave()
   nextTick(() => documentRef.value?.focusContent?.())
 })
@@ -713,12 +917,17 @@ onUnmounted(() => {
         :has-content="Boolean(form.transcript.trim())"
         :can-export="Boolean(form.id)"
         :retry-kind="retryKind"
+        :recording-segments="recordingSegments"
+        :pending-recording-count="pendingRecordingCount"
+        :persisted-recording-jobs="persistedRecordingJobs"
         @record-toggle="isRecording ? stopMeetingRecording() : startMeetingRecording()"
         @upload="chooseAudioFile"
         @summarize="handleSummarize"
         @export-markdown="handleExport('md')"
         @export-docx="handleExport('docx')"
         @retry="handleRetry"
+        @retry-segment="retryRecordingSegment"
+        @retry-persisted="retryPersistedRecording"
       />
     </template>
   </MeetingWorkspace>
@@ -726,7 +935,7 @@ onUnmounted(() => {
   <input
     ref="audioInputRef"
     type="file"
-    accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,.mp3,.wav"
+    accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/webm,.mp3,.wav,.webm"
     class="hidden"
     @change="handleAudioSelected"
   />

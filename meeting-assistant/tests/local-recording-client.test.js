@@ -67,6 +67,62 @@ test('useLocalRecording calls local agent health endpoint', async () => {
   assert.equal(result.ok, true)
 })
 
+test('useLocalRecording uploads a selected audio file in bounded transport chunks', async () => {
+  const calls = []
+  const client = useLocalRecording({
+    baseUrl: 'http://local.test/api',
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options })
+      if (url.endsWith('/uploads/start')) {
+        return Response.json({ id: 'upload-1', status: 'uploading' }, { status: 201 })
+      }
+      if (url.includes('/uploads/upload-1/chunks')) {
+        return Response.json({ index: Number(new URL(url).searchParams.get('index')) }, { status: 201 })
+      }
+      if (url.endsWith('/uploads/upload-1/finish')) {
+        return Response.json({ id: 'upload-1', status: 'completed', result: { transcript: 'done' } })
+      }
+      throw new Error(`unexpected request ${url}`)
+    }
+  })
+
+  const result = await client.transcribeUploadedAudio(
+    new File(['abcdefghij'], 'meeting.mp3', { type: 'audio/mpeg' }),
+    { title: '长会议' },
+    { chunkSize: 4 }
+  )
+
+  assert.equal(result.transcript, 'done')
+  const chunkCalls = calls.filter(call => call.url.includes('/chunks'))
+  assert.equal(chunkCalls.length, 3)
+  assert.deepEqual(chunkCalls.map(call => call.options.body.size), [4, 4, 2])
+  assert.equal(calls.find(call => call.url.endsWith('/uploads/start')).options.method, 'POST')
+})
+
+test('useLocalRecording lists persisted jobs and retries a failed recording', async () => {
+  const calls = []
+  const client = useLocalRecording({
+    baseUrl: 'http://local.test/api',
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options })
+      if (url.endsWith('/recordings')) {
+        return Response.json([{ id: 'old-job', status: 'failed', error: 'temporary' }])
+      }
+      if (url.endsWith('/old-job/retry')) {
+        return Response.json({ id: 'old-job', status: 'queued' }, { status: 202 })
+      }
+      throw new Error(`unexpected request ${url}`)
+    }
+  })
+
+  const jobs = await client.listRecordingJobs()
+  const retry = await client.retryRecording('old-job')
+
+  assert.equal(jobs[0].id, 'old-job')
+  assert.equal(retry.status, 'queued')
+  assert.equal(calls[1].options.method, 'POST')
+})
+
 test('useLocalRecording sends stored meeting access token to cloud API proxy', async () => {
   const previousStorage = globalThis.localStorage
   globalThis.localStorage = fakeStorage({ meeting_access_token: 'meeting-token' })
@@ -111,6 +167,22 @@ test('useLocalRecording uploads raw recording chunks and finishes pipeline', asy
           headers: { 'Content-Type': 'application/json' }
         })
       }
+      if (url.endsWith('/finish')) {
+        return new Response(JSON.stringify({ id: 'rec-1', status: 'processing' }), {
+          status: 202,
+          headers: { 'Content-Type': 'application/json' }
+        })
+      }
+      if (url.endsWith('/status')) {
+        return new Response(JSON.stringify({
+          id: 'rec-1',
+          status: 'completed',
+          result: { asr: { text: '转写' }, summary: '纪要' }
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        })
+      }
       return new Response(JSON.stringify({
         asr: { text: '转写' },
         summary: '纪要'
@@ -134,5 +206,6 @@ test('useLocalRecording uploads raw recording chunks and finishes pipeline', asy
   assert.equal(calls[1].options.method, 'POST')
   assert.equal(calls[1].options.headers['Content-Type'], 'audio/webm')
   assert.equal(calls[2].url, 'http://local.test/api/local/recordings/rec-1/finish')
+  assert.equal(calls[3].url, 'http://local.test/api/local/recordings/rec-1/status')
   assert.equal(result.summary, '纪要')
 })

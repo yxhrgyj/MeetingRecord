@@ -63,4 +63,35 @@ describe('MeetingAssistant', () => {
     expect(wrapper.text()).toContain('模型服务暂不可用')
     expect(wrapper.emitted('retry')[0]).toEqual(['summarize'])
   })
+
+  it('shows segment processing and blocks final summary until every segment is complete', () => {
+    const wrapper = mount(MeetingAssistant, {
+      props: {
+        hasContent: true,
+        recordingSegments: [
+          { index: 0, status: 'completed', transcript: 'first' },
+          { index: 1, status: 'processing', transcript: '' }
+        ],
+        pendingRecordingCount: 1
+      }
+    })
+
+    expect(wrapper.text()).toContain('第 1 段')
+    expect(wrapper.text()).toContain('转写中')
+    expect(wrapper.get('[data-action="summarize"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('shows persisted failed recordings that can be recovered', async () => {
+    const wrapper = mount(MeetingAssistant, {
+      props: {
+        persistedRecordingJobs: [
+          { id: 'old-job', status: 'failed', error: 'Uploaded audio is too large.' }
+        ]
+      }
+    })
+
+    expect(wrapper.get('[data-region="persisted-recordings"]').text()).toContain('old-job')
+    await wrapper.get('[data-action="retry-persisted"]').trigger('click')
+    expect(wrapper.emitted('retry-persisted')).toEqual([['old-job']])
+  })
 })

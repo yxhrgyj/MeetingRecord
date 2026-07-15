@@ -151,6 +151,39 @@ def test_transcribe_converts_webm_upload(monkeypatch):
     assert recognizer.last_data == converted_wav
 
 
+def test_transcribe_file_accepts_streamed_audio_body(monkeypatch):
+    converted_wav = make_wav(seconds=0.2)
+    recognizer = FakeRecognizer()
+    monkeypatch.setattr(main_module, "convert_audio_to_wav_bytes", lambda data, input_suffix, label: converted_wav)
+    client = TestClient(main_module.create_app(recognizer))
+
+    response = client.post(
+        "/transcribe-file",
+        content=b"large webm body",
+        headers={
+            "Content-Type": "audio/webm",
+            "X-Filename": "meeting.webm",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["text"] == "test transcript"
+    assert recognizer.last_data == converted_wav
+
+
+def test_transcribe_file_rejects_unknown_filename_or_type():
+    client = TestClient(main_module.create_app(FakeRecognizer()))
+
+    response = client.post(
+        "/transcribe-file",
+        content=b"bad",
+        headers={"Content-Type": "application/octet-stream", "X-Filename": "meeting.txt"},
+    )
+
+    assert response.status_code == 415
+    assert response.json()["detail"] == "Only WAV, MP3, and WebM uploads are supported."
+
+
 def test_transcribe_rejects_non_wav_upload():
     client = TestClient(main_module.create_app(FakeRecognizer()))
     response = client.post(

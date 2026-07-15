@@ -1,4 +1,5 @@
 import { fetchWithAuth } from './useAuthToken.js'
+import { splitTranscriptIntoChunks } from '../../shared/longMeeting.js'
 
 const DEFAULT_SUMMARIZER_BASE_URL = '/api'
 
@@ -47,5 +48,53 @@ export function useSummarizer(options = {}) {
     return response.json()
   }
 
-  return { summarizeContent }
+  async function requestJson(path, body) {
+    const response = await fetchWithAuth(`${baseUrl}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }, fetchImpl)
+    if (!response.ok) throw new Error(await readError(response))
+    return response.json()
+  }
+
+  async function summarizeLongMeeting(content, {
+    chunkOptions = {},
+    onProgress = () => {},
+    onStageSummary = () => {},
+    existingStageSummaries = [],
+    startStageIndex = 0
+  } = {}) {
+    const normalizedContent = String(content || '').trim()
+    if (!normalizedContent) throw new Error('娌℃湁鍙暣鐞嗙殑杞啓鍐呭')
+
+    const chunks = splitTranscriptIntoChunks(normalizedContent, chunkOptions)
+    const stageSummaries = existingStageSummaries
+      .filter(item => String(item?.content || '').trim())
+      .map(item => ({ index: Number(item.index) || 0, content: String(item.content).trim() }))
+
+    for (let index = startStageIndex; index < chunks.length; index += 1) {
+      onProgress({ phase: 'stage', index, total: chunks.length })
+      const result = await requestJson('/summarize/stage', {
+        content: chunks[index],
+        index,
+        total: chunks.length
+      })
+      stageSummaries[index] = { index, content: String(result.summary || '').trim() }
+      onStageSummary(stageSummaries[index])
+    }
+
+    const orderedStageSummaries = stageSummaries
+      .filter(item => item?.content)
+      .sort((left, right) => left.index - right.index)
+    onProgress({ phase: 'final', total: orderedStageSummaries.length })
+    const finalResult = await requestJson('/summarize/final', { summaries: orderedStageSummaries })
+    return {
+      summary: finalResult.summary,
+      stageSummaries: orderedStageSummaries,
+      chunks
+    }
+  }
+
+  return { summarizeContent, summarizeLongMeeting }
 }

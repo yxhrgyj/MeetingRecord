@@ -52,8 +52,7 @@ if ($ForcePorts) {
 
 if ($StopOllama) {
   if (Test-Path $OllamaExe) {
-    & $OllamaExe stop qwen3:8b 2>$null
-    & $OllamaExe stop qwen3:4b 2>$null
+    & $OllamaExe stop qwen3.5:9b 2>$null
   }
   Get-Process -Name 'ollama' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 }

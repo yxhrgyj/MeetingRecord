@@ -22,7 +22,7 @@ test('summarizeContent posts editor content to local API', async () => {
   const calls = []
   globalThis.fetch = async (url, options) => {
     calls.push({ url, options })
-    return new Response(JSON.stringify({ summary: '## 会议纪要草稿\n\n### 关键结论\n- 继续推进', model: 'qwen3:8b' }), {
+return new Response(JSON.stringify({ summary: '## 会议纪要草稿\n\n### 关键结论\n- 继续推进', model: 'qwen3.5:9b' }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' }
     })

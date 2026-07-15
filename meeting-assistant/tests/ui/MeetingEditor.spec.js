@@ -5,13 +5,19 @@ import MeetingEditor from '@/components/MeetingEditor.vue'
 
 const clients = vi.hoisted(() => ({
   transcribeAudio: vi.fn(),
+  transcribeUploadedAudio: vi.fn(),
   summarizeContent: vi.fn(),
   createMeeting: vi.fn(),
   updateMeeting: vi.fn(),
   checkHealth: vi.fn(),
   startRecording: vi.fn(),
   uploadChunk: vi.fn(),
-  finishRecording: vi.fn()
+  finishRecording: vi.fn(),
+  queueRecording: vi.fn(),
+  waitForRecording: vi.fn(),
+  listRecordingJobs: vi.fn(),
+  retryRecording: vi.fn(),
+  summarizeLongMeeting: vi.fn()
 }))
 
 vi.mock('@/composables/useApi.js', () => ({
@@ -31,12 +37,20 @@ vi.mock('@/composables/useLocalRecording.js', () => ({
     checkHealth: clients.checkHealth,
     startRecording: clients.startRecording,
     uploadChunk: clients.uploadChunk,
-    finishRecording: clients.finishRecording
+    finishRecording: clients.finishRecording,
+    queueRecording: clients.queueRecording,
+    waitForRecording: clients.waitForRecording,
+    transcribeUploadedAudio: clients.transcribeUploadedAudio,
+    listRecordingJobs: clients.listRecordingJobs,
+    retryRecording: clients.retryRecording
   })
 }))
 
 vi.mock('@/composables/useSummarizer.js', () => ({
-  useSummarizer: () => ({ summarizeContent: clients.summarizeContent })
+  useSummarizer: () => ({
+    summarizeContent: clients.summarizeContent,
+    summarizeLongMeeting: clients.summarizeLongMeeting
+  })
 }))
 
 const initialData = {
@@ -62,7 +76,15 @@ const initialData = {
 describe('MeetingEditor integration', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    clients.checkHealth.mockResolvedValue({ ok: true })
+    clients.startRecording.mockResolvedValue({ id: 'recording-1' })
+    clients.uploadChunk.mockResolvedValue({ index: 0 })
+    clients.queueRecording.mockResolvedValue({ id: 'recording-1', status: 'processing' })
+    clients.waitForRecording.mockResolvedValue({ transcript: '分段转写结果' })
     clients.transcribeAudio.mockResolvedValue({ text: '转写结果' })
+    clients.transcribeUploadedAudio.mockResolvedValue({ transcript: '转写结果' })
+    clients.listRecordingJobs.mockResolvedValue([])
+    clients.retryRecording.mockResolvedValue({ id: 'old-job', status: 'queued' })
     clients.summarizeContent.mockResolvedValue({ summary: '确认三项行动。' })
   })
 
@@ -105,7 +127,11 @@ describe('MeetingEditor integration', () => {
     await fileInput.trigger('change')
     await flushPromises()
 
-    expect(clients.transcribeAudio).toHaveBeenCalledWith(audio)
+    expect(clients.transcribeUploadedAudio).toHaveBeenCalledWith(
+      audio,
+      expect.objectContaining({ title: '原会议' }),
+      expect.any(Object)
+    )
     expect(wrapper.get('[data-field="transcript"]').element.value).toContain('转写结果')
 
     await wrapper.get('[data-action="summarize"]').trigger('click')
@@ -120,6 +146,53 @@ describe('MeetingEditor integration', () => {
     expect(wrapper.get('[data-field="transcript"]').element.value).toContain('转写结果')
 
     wrapper.unmount()
+  })
+
+  it('starts the next recording while the previous segment is still processing', async () => {
+    const previousMediaDevices = navigator.mediaDevices
+    const previousMediaRecorder = window.MediaRecorder
+    class FakeMediaRecorder {
+      static isTypeSupported() { return true }
+
+      constructor() {
+        this.state = 'inactive'
+      }
+
+      start() { this.state = 'recording' }
+
+      stop() {
+        this.state = 'inactive'
+        this.onstop?.()
+      }
+    }
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: { getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [{ stop: vi.fn() }] }) }
+    })
+    window.MediaRecorder = FakeMediaRecorder
+
+    let releaseFirstSegment
+    clients.waitForRecording.mockImplementationOnce(() => new Promise(resolve => {
+      releaseFirstSegment = resolve
+    }))
+
+    const wrapper = mount(MeetingEditor, { props: { initialData } })
+    await wrapper.get('[data-action="record-toggle"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-action="record-toggle"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('第 1 段')
+    expect(wrapper.text()).toContain('转写中')
+
+    await wrapper.get('[data-action="record-toggle"]').trigger('click')
+    await flushPromises()
+    expect(clients.startRecording).toHaveBeenCalledTimes(2)
+
+    releaseFirstSegment({ transcript: 'first' })
+    wrapper.unmount()
+    Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: previousMediaDevices })
+    window.MediaRecorder = previousMediaRecorder
   })
 
   it('exports a cloned saved meeting with the requested format', async () => {

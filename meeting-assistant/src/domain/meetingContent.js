@@ -1,6 +1,9 @@
 const SUMMARY_HEADING = '## 会议纪要'
 const TRANSCRIPT_HEADING = '## 完整转写'
 const LEGACY_SUMMARY_HEADING = '## 会议纪要草稿'
+const LEGACY_ORGANIZED_SUMMARY_HEADING = '## 整理的纪要'
+const LEGACY_TRANSCRIPT_HEADING = '## 语音转写原文'
+const LEGACY_DETAIL_HEADING = '## 会议详情'
 
 function normalizeLineEndings(value) {
   return String(value || '').replace(/\r\n/g, '\n').trim()
@@ -10,6 +13,27 @@ function sectionAfterHeading(source, heading) {
   return source.slice(heading.length).trim()
 }
 
+function parseLegacyTranscript(source) {
+  const summaryHeadings = [
+    LEGACY_ORGANIZED_SUMMARY_HEADING,
+    SUMMARY_HEADING,
+    LEGACY_SUMMARY_HEADING
+  ]
+  const marker = summaryHeadings
+    .map(heading => ({ heading, index: source.indexOf(`\n${heading}`) }))
+    .filter(item => item.index >= 0)
+    .sort((left, right) => left.index - right.index)[0]
+
+  if (!marker) {
+    return { summary: '', transcript: source }
+  }
+
+  return {
+    summary: normalizeMeetingSummary(source.slice(marker.index + 1)),
+    transcript: source.slice(0, marker.index).replace(/\n---\s*$/, '').trim()
+  }
+}
+
 export function normalizeMeetingSummary(summary) {
   const normalized = normalizeLineEndings(summary)
   if (normalized.startsWith(LEGACY_SUMMARY_HEADING)) {
@@ -17,6 +41,9 @@ export function normalizeMeetingSummary(summary) {
   }
   if (normalized.startsWith(SUMMARY_HEADING)) {
     return sectionAfterHeading(normalized, SUMMARY_HEADING)
+  }
+  if (normalized.startsWith(LEGACY_ORGANIZED_SUMMARY_HEADING)) {
+    return sectionAfterHeading(normalized, LEGACY_ORGANIZED_SUMMARY_HEADING)
   }
   return normalized
 }
@@ -48,6 +75,10 @@ export function parseMeetingContent(content) {
 
   if (source.startsWith(TRANSCRIPT_HEADING)) {
     return { summary: '', transcript: sectionAfterHeading(source, TRANSCRIPT_HEADING) }
+  }
+
+  if (source.startsWith(LEGACY_TRANSCRIPT_HEADING) || source.startsWith(LEGACY_DETAIL_HEADING)) {
+    return parseLegacyTranscript(source)
   }
 
   const legacyMarker = `\n${LEGACY_SUMMARY_HEADING}`

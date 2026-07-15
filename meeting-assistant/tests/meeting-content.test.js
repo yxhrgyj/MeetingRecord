@@ -56,6 +56,31 @@ test('legacy minutes draft without transcript is normalized as minutes', () => {
   })
 })
 
+test('legacy meeting details move to transcript when organized minutes follow', () => {
+  assert.deepEqual(parseMeetingContent([
+    '## 会议详情',
+    '',
+    '[00:00-00:30] 讨论预算。',
+    '',
+    '## 整理的纪要',
+    '',
+    '### 会议决定',
+    '- 批准预算'
+  ].join('\n')), {
+    summary: '### 会议决定\n- 批准预算',
+    transcript: '## 会议详情\n\n[00:00-00:30] 讨论预算。'
+  })
+})
+
+test('legacy transcript wrapper without minutes remains transcript', () => {
+  const content = '## 语音转写原文\n\n[00:00-00:30] 原始讨论内容'
+
+  assert.deepEqual(parseMeetingContent(content), {
+    summary: '',
+    transcript: content
+  })
+})
+
 test('unmarked legacy content remains primary meeting minutes', () => {
   assert.deepEqual(parseMeetingContent('## 手写纪要\n\n保留原始内容。'), {
     summary: '## 手写纪要\n\n保留原始内容。',

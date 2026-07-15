@@ -24,13 +24,13 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps
 默认纪要整理模型为：
 
 ```text
-qwen3:8b
+qwen3.5:9b
 ```
 
-如需临时换模型：
+如需临时换用其他已安装模型：
 
 ```powershell
-$env:OLLAMA_MODEL='qwen3:4b'
+$env:OLLAMA_MODEL='已安装的模型名'
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps1
 ```
 

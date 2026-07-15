@@ -36,6 +36,29 @@ describe('MeetingDetail', () => {
     expect(wrapper.get('[data-content="transcript"]').text()).toContain('讨论模型选择')
   })
 
+  it('moves legacy meeting details into the transcript tab', async () => {
+    const legacyMeeting = {
+      ...meeting,
+      content: [
+        '## 会议详情',
+        '',
+        '[00:00-00:30] 原始讨论内容',
+        '',
+        '## 整理的纪要',
+        '',
+        '### 会议决定',
+        '- 批准预算'
+      ].join('\n')
+    }
+    const wrapper = mount(MeetingDetail, { props: { meeting: legacyMeeting } })
+
+    expect(wrapper.get('[data-content="summary"]').text()).toContain('批准预算')
+    expect(wrapper.get('[data-content="summary"]').text()).not.toContain('原始讨论内容')
+
+    await wrapper.get('[data-section="transcript"]').trigger('click')
+    expect(wrapper.get('[data-content="transcript"]').text()).toContain('原始讨论内容')
+  })
+
   it('forwards navigation, edit, export, and delete commands', async () => {
     const wrapper = mount(MeetingDetail, { props: { meeting } })
 
