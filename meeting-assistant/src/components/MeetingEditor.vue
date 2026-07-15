@@ -7,6 +7,12 @@ import { useSummarizer } from '@/composables/useSummarizer.js'
 import { useDateUtils } from '@/composables/useDateUtils.js'
 import { canAutoSaveMeeting } from '@/domain/meetingDraft.js'
 import {
+  createAudioBatchItems,
+  formatCompletedAudioBatch,
+  moveAudioBatchItem,
+  runAudioBatch
+} from '../../shared/audioBatch.js'
+import {
   normalizeMeetingSummary,
   parseMeetingContent,
   serializeMeetingContent
@@ -40,9 +46,11 @@ const form = reactive({
 
 const documentRef = ref(null)
 const audioInputRef = ref(null)
+const audioBatchInputRef = ref(null)
 const assistantOpen = ref(false)
 const activeSection = ref('summary')
 const isTranscribing = ref(false)
+const isBatchTranscribing = ref(false)
 const isSummarizing = ref(false)
 const isRecording = ref(false)
 const isFinishingRecording = ref(false)
@@ -59,6 +67,8 @@ const persistedRecordingJobs = ref([])
 const recordingNextIndex = ref(0)
 const recordingTranscriptBase = ref('')
 const stageSummaries = ref([])
+const batchItems = ref([])
+const batchTranscriptBase = ref('')
 const recordingTimer = ref(null)
 const recordingSeconds = ref(0)
 const autoSaveTimer = ref(null)
@@ -69,6 +79,8 @@ const pendingRecordingCount = computed(() => recordingSegments.value.filter(segm
 )).length)
 
 const hasFailedRecording = computed(() => recordingSegments.value.some(segment => segment.status === 'failed'))
+
+const hasIncompleteAudioBatch = computed(() => batchItems.value.some(item => item.status !== 'completed'))
 
 const retryKind = computed(() => {
   if (/失败|不可用|异常|错误/.test(summaryStatus.value)) return 'summarize'
@@ -261,6 +273,93 @@ async function handleAudioSelected(event) {
   } finally {
     isTranscribing.value = false
   }
+}
+
+function chooseAudioBatch() {
+  if (!isBatchTranscribing.value) audioBatchInputRef.value?.click()
+}
+
+function syncBatchTranscript() {
+  const batchTranscript = formatCompletedAudioBatch(batchItems.value)
+  const baseTranscript = batchTranscriptBase.value.trim()
+  form.transcript = baseTranscript
+    ? (batchTranscript ? `${baseTranscript}\n\n${batchTranscript}` : baseTranscript)
+    : batchTranscript
+  if (batchTranscript) activeSection.value = 'transcript'
+}
+
+function updateBatchItem(nextItem) {
+  const index = batchItems.value.findIndex(item => item.id === nextItem.id)
+  if (index < 0) return
+  batchItems.value.splice(index, 1, { ...batchItems.value[index], ...nextItem })
+  syncBatchTranscript()
+}
+
+function handleAudioBatchSelected(event) {
+  const items = createAudioBatchItems(event.target.files || [])
+  event.target.value = ''
+  if (!items.length) return
+
+  batchItems.value = items
+  batchTranscriptBase.value = form.transcript
+  asrStatus.value = `已选择 ${items.length} 个音频文件，请确认顺序后开始转写。`
+}
+
+async function startAudioBatch() {
+  if (isBatchTranscribing.value || !batchItems.value.length) return
+
+  isBatchTranscribing.value = true
+  asrStatus.value = '批量音频转写中...'
+  try {
+    const result = await runAudioBatch({
+      items: batchItems.value,
+      metadata: {
+        title: form.title,
+        date: form.date,
+        startTime: form.startTime
+      },
+      transcribeFile: (file, metadata, options) => (
+        localRecording.transcribeUploadedAudio
+          ? localRecording.transcribeUploadedAudio(file, metadata, options)
+          : asr.transcribeAudio(file)
+      ),
+      onItem: updateBatchItem
+    })
+    batchItems.value = result
+    syncBatchTranscript()
+    const failed = result.find(item => item.status === 'failed')
+    asrStatus.value = failed
+      ? `${failed.filename} 转写失败，请重试后继续。`
+      : '批量音频转写完成。'
+  } catch (error) {
+    asrStatus.value = error?.message || '批量音频转写失败。'
+  } finally {
+    isBatchTranscribing.value = false
+  }
+}
+
+function moveBatchItem(fromIndex, toIndex) {
+  if (isBatchTranscribing.value) return
+  batchItems.value = moveAudioBatchItem(batchItems.value, fromIndex, toIndex)
+  syncBatchTranscript()
+}
+
+function removeBatchItem(index) {
+  if (isBatchTranscribing.value) return
+  batchItems.value = batchItems.value
+    .filter(item => item.index !== index)
+    .map((item, nextIndex) => ({ ...item, index: nextIndex }))
+  syncBatchTranscript()
+}
+
+function retryBatchItem(index) {
+  if (isBatchTranscribing.value) return
+  batchItems.value = batchItems.value.map(item => (
+    item.index >= index && item.status !== 'completed'
+      ? { ...item, status: 'selected', error: '' }
+      : item
+  ))
+  void startAudioBatch()
 }
 
 async function loadPersistedRecordingJobs() {
@@ -562,10 +661,10 @@ async function handleSummarize({ resume = false } = {}) {
     return
   }
 
-  if (isRecording.value || isFinishingRecording.value || pendingRecordingCount.value || hasFailedRecording.value) {
+  if (isRecording.value || isFinishingRecording.value || pendingRecordingCount.value || hasFailedRecording.value || hasIncompleteAudioBatch.value) {
     summaryStatus.value = hasFailedRecording.value
       ? '请先重试失败的录音段'
-      : '请等待全部录音段转写完成'
+      : (hasIncompleteAudioBatch.value ? '请先完成或重试批量音频转写' : '请等待全部录音段转写完成')
     return
   }
 
@@ -920,8 +1019,15 @@ onUnmounted(() => {
         :recording-segments="recordingSegments"
         :pending-recording-count="pendingRecordingCount"
         :persisted-recording-jobs="persistedRecordingJobs"
+        :batch-items="batchItems"
+        :batch-active="isBatchTranscribing"
         @record-toggle="isRecording ? stopMeetingRecording() : startMeetingRecording()"
         @upload="chooseAudioFile"
+        @batch-upload="chooseAudioBatch"
+        @batch-start="startAudioBatch"
+        @batch-move="moveBatchItem"
+        @batch-remove="removeBatchItem"
+        @batch-retry="retryBatchItem"
         @summarize="handleSummarize"
         @export-markdown="handleExport('md')"
         @export-docx="handleExport('docx')"
@@ -938,6 +1044,16 @@ onUnmounted(() => {
     accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/webm,.mp3,.wav,.webm"
     class="hidden"
     @change="handleAudioSelected"
+  />
+
+  <input
+    ref="audioBatchInputRef"
+    data-input="audio-batch"
+    type="file"
+    multiple
+    accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/webm,.mp3,.wav,.webm"
+    class="hidden"
+    @change="handleAudioBatchSelected"
   />
 
 </template>
