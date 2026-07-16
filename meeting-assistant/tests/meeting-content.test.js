@@ -9,14 +9,14 @@ import {
 
 test('canonical meeting content round-trips without loss', () => {
   const content = serializeMeetingContent({
-    summary: '### 会议决定\n\n继续推进 8B 模型。',
+    summary: '会议决定\n\n继续推进 8B 模型。',
     transcript: '[00:00-00:30]\n讨论模型选择。'
   })
 
   assert.equal(content, [
     '## 会议纪要',
     '',
-    '### 会议决定',
+    '会议决定',
     '',
     '继续推进 8B 模型。',
     '',
@@ -28,7 +28,7 @@ test('canonical meeting content round-trips without loss', () => {
     '讨论模型选择。'
   ].join('\n'))
   assert.deepEqual(parseMeetingContent(content), {
-    summary: '### 会议决定\n\n继续推进 8B 模型。',
+    summary: '会议决定\n\n继续推进 8B 模型。',
     transcript: '[00:00-00:30]\n讨论模型选择。'
   })
 })
@@ -44,14 +44,14 @@ test('legacy transcript followed by minutes draft is split conservatively', () =
     '### 会议决定',
     '- 批准预算'
   ].join('\n')), {
-    summary: '### 会议决定\n- 批准预算',
+    summary: '会议决定\n1. 批准预算',
     transcript: '## 语音转写原文\n\n[00:00-00:30] 讨论预算。'
   })
 })
 
 test('legacy minutes draft without transcript is normalized as minutes', () => {
   assert.deepEqual(parseMeetingContent('## 会议纪要草稿\n\n### 结论\n继续推进'), {
-    summary: '### 结论\n继续推进',
+    summary: '结论\n继续推进',
     transcript: ''
   })
 })
@@ -67,7 +67,7 @@ test('legacy meeting details move to transcript when organized minutes follow', 
     '### 会议决定',
     '- 批准预算'
   ].join('\n')), {
-    summary: '### 会议决定\n- 批准预算',
+    summary: '会议决定\n1. 批准预算',
     transcript: '## 会议详情\n\n[00:00-00:30] 讨论预算。'
   })
 })
@@ -97,10 +97,37 @@ test('transcript-only canonical content survives reload', () => {
 test('normalizes one leading minutes wrapper heading', () => {
   assert.equal(
     normalizeMeetingSummary('## 会议纪要草稿\n\n### 结论\n继续推进'),
-    '### 结论\n继续推进'
+    '结论\n继续推进'
   )
   assert.equal(
     normalizeMeetingSummary('## 会议纪要\n\n### 结论\n继续推进'),
-    '### 结论\n继续推进'
+    '结论\n继续推进'
   )
+})
+
+test('normalizes legacy AI Markdown minutes into plain text', () => {
+  const summary = normalizeMeetingSummary([
+    '## 会议纪要草稿',
+    '',
+    '**需求真实性确认**：本周完成访谈。',
+    '',
+    '## 5. 下一步建议',
+    '- [ ] 确认访谈名单',
+    '- 输出实施方案',
+    '',
+    '---',
+    '',
+    '*注：请负责人尽快确认。*'
+  ].join('\n'))
+
+  assert.equal(summary, [
+    '需求真实性确认：本周完成访谈。',
+    '',
+    '5. 下一步建议',
+    '1. 确认访谈名单',
+    '2. 输出实施方案',
+    '',
+    '注：请负责人尽快确认。'
+  ].join('\n'))
+  assert.doesNotMatch(summary, /\*\*|##|---|\[ \]|^\s*[-*]\s/m)
 })

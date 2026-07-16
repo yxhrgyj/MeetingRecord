@@ -13,6 +13,50 @@ function sectionAfterHeading(source, heading) {
   return source.slice(heading.length).trim()
 }
 
+function normalizeLegacyAiMarkdown(summary) {
+  let listIndex = 0
+  const lines = summary.split('\n').reduce((result, rawLine) => {
+    const line = rawLine.trim()
+
+    if (/^(?:-{3,}|_{3,}|\*{3,})$/.test(line)) {
+      return result
+    }
+
+    const heading = line.match(/^#{1,6}\s+(.+?)\s*#*$/)
+    if (heading) {
+      listIndex = 0
+      result.push(heading[1])
+      return result
+    }
+
+    const bullet = line.match(/^[-*+]\s+(?:\[[ xX]\]\s*)?(.+)$/)
+    if (bullet) {
+      listIndex += 1
+      result.push(`${listIndex}. ${bullet[1]}`)
+      return result
+    }
+
+    if (!line) {
+      listIndex = 0
+      if (result.at(-1) !== '') result.push('')
+      return result
+    }
+
+    listIndex = 0
+    result.push(line)
+    return result
+  }, [])
+
+  return lines
+    .map(line => line
+      .replace(/\*\*(.+?)\*\*/g, '$1')
+      .replace(/__(.+?)__/g, '$1')
+      .replace(/^\*([^*\n]+)\*$/, '$1')
+      .replace(/^_([^_\n]+)_$/, '$1'))
+    .join('\n')
+    .trim()
+}
+
 function parseLegacyTranscript(source) {
   const summaryHeadings = [
     LEGACY_ORGANIZED_SUMMARY_HEADING,
@@ -37,15 +81,15 @@ function parseLegacyTranscript(source) {
 export function normalizeMeetingSummary(summary) {
   const normalized = normalizeLineEndings(summary)
   if (normalized.startsWith(LEGACY_SUMMARY_HEADING)) {
-    return sectionAfterHeading(normalized, LEGACY_SUMMARY_HEADING)
+    return normalizeLegacyAiMarkdown(sectionAfterHeading(normalized, LEGACY_SUMMARY_HEADING))
   }
   if (normalized.startsWith(SUMMARY_HEADING)) {
-    return sectionAfterHeading(normalized, SUMMARY_HEADING)
+    return normalizeLegacyAiMarkdown(sectionAfterHeading(normalized, SUMMARY_HEADING))
   }
   if (normalized.startsWith(LEGACY_ORGANIZED_SUMMARY_HEADING)) {
-    return sectionAfterHeading(normalized, LEGACY_ORGANIZED_SUMMARY_HEADING)
+    return normalizeLegacyAiMarkdown(sectionAfterHeading(normalized, LEGACY_ORGANIZED_SUMMARY_HEADING))
   }
-  return normalized
+  return normalizeLegacyAiMarkdown(normalized)
 }
 
 export function parseMeetingContent(content) {
@@ -70,7 +114,7 @@ export function parseMeetingContent(content) {
         transcript: sectionAfterHeading(source.slice(transcriptIndex + 1), TRANSCRIPT_HEADING)
       }
     }
-    return { summary: sectionAfterHeading(source, SUMMARY_HEADING), transcript: '' }
+    return { summary: normalizeMeetingSummary(sectionAfterHeading(source, SUMMARY_HEADING)), transcript: '' }
   }
 
   if (source.startsWith(TRANSCRIPT_HEADING)) {

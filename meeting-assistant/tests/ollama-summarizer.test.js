@@ -17,7 +17,9 @@ test('buildMeetingSummaryPrompt asks for grounded meeting notes', () => {
 
   assert.match(prompt, /^\/no_think\n/)
   assert.match(prompt, /不要编造/)
-  assert.match(prompt, /会议纪要草稿/)
+  assert.match(prompt, /纯文本/)
+  assert.match(prompt, /不得使用 Markdown/)
+  assert.doesNotMatch(prompt, /## 会议纪要草稿/)
   assert.match(prompt, /金额\/预算/)
   assert.match(prompt, /\[00:00-00:20\]\n讨论预算五百一十万。/)
 })
@@ -121,6 +123,7 @@ test('stage summary prompt extracts grounded decisions and actions from one chun
   assert.match(prompt, /决策结论/)
   assert.match(prompt, /负责人/)
   assert.match(prompt, /风险和未决问题/)
+  assert.match(prompt, /不得使用 Markdown/)
   assert.match(prompt, /讨论第一阶段的预算与负责人/)
 })
 
@@ -134,6 +137,8 @@ test('final summary prompt uses stage summaries instead of raw transcript', () =
   assert.match(prompt, /阶段一：确定预算负责人/)
   assert.match(prompt, /阶段二：下周提交方案/)
   assert.match(prompt, /1500.*3000/)
+  assert.match(prompt, /不得使用 Markdown/)
+  assert.doesNotMatch(prompt, /## 会议纪要草稿/)
 })
 
 test('stage and final summary calls use qwen3.5:9b and disable thinking', async () => {
