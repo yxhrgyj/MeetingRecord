@@ -78,6 +78,11 @@ function Stop-LocalModelService {
 function Start-LocalModelService {
   Write-Host "Starting local model service on http://127.0.0.1:8789 ..."
   $env:PORT = '8789'
+  $asrHost = '127.0.0.1'
+  $wslAddresses = (& wsl.exe -d 'Ubuntu-24.04' -- hostname -I 2>$null).Trim()
+  $wslAddress = ($wslAddresses -split '\s+' | Where-Object { $_ }) | Select-Object -First 1
+  if ($wslAddress) { $asrHost = $wslAddress }
+  $env:ASR_BASE_URL = "http://${asrHost}:8000"
   if ($modelGatewayToken) {
     $env:MEETING_ACCESS_TOKEN = $modelGatewayToken
   }
