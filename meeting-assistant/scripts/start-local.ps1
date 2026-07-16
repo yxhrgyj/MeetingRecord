@@ -11,6 +11,15 @@ $RuntimeDir = Join-Path $AppDir '.local-runtime'
 $LogDir = Join-Path $AppDir 'logs'
 $NodePort = 3001
 $AsrPort = 8000
+$AsrHost = '127.0.0.1'
+if ($env:ASR_BASE_URL) {
+  $AsrHost = ([Uri]$env:ASR_BASE_URL).Host
+} else {
+  $wslAddresses = (& wsl.exe -d 'Ubuntu-24.04' -- hostname -I 2>$null).Trim()
+  $wslAddress = ($wslAddresses -split '\s+' | Where-Object { $_ }) | Select-Object -First 1
+  if ($wslAddress) { $AsrHost = $wslAddress }
+}
+$AsrBaseUrl = "http://${AsrHost}:$AsrPort"
 $OllamaPort = 11434
 $OllamaModel = if ($env:OLLAMA_MODEL) { $env:OLLAMA_MODEL } else { 'qwen3.5:9b' }
 $OllamaExe = Join-Path $env:LOCALAPPDATA 'Programs\Ollama\ollama.exe'
@@ -72,8 +81,8 @@ function Start-Ollama {
 }
 
 function Start-Asr {
-  if (Test-Port $AsrPort) {
-    Write-Host "[OK] ASR already running on $AsrPort"
+  if (Test-Http "$AsrBaseUrl/health") {
+    Write-Host "[OK] ASR already running at $AsrBaseUrl"
     return
   }
 
@@ -82,7 +91,7 @@ function Start-Asr {
   Remove-Item -LiteralPath $stdout, $stderr -Force -ErrorAction SilentlyContinue
 
   $asrLinuxPath = '/mnt/e/Objects/MeetingRecord/.worktrees/asr-service/asr-service'
-  $cmd = "cd $asrLinuxPath && source ../.venv-asr/bin/activate && export HF_ENDPOINT=https://hf-mirror.com && export PYTHONPATH=$asrLinuxPath && exec python -m uvicorn app.main:app --host 127.0.0.1 --port $AsrPort"
+  $cmd = "cd $asrLinuxPath && source ../.venv-asr/bin/activate && export HF_ENDPOINT=https://hf-mirror.com && export PYTHONPATH=$asrLinuxPath && exec python -m uvicorn app.main:app --host 0.0.0.0 --port $AsrPort"
   Write-Host "[..] Starting ASR service on $AsrPort"
   $process = Start-Process `
     -FilePath 'wsl.exe' `
@@ -93,11 +102,15 @@ function Start-Asr {
     -PassThru
   Set-Content -LiteralPath (Join-Path $RuntimeDir 'asr.pid') -Value $process.Id
 
-  if (Wait-Port $AsrPort 90) {
-    Write-Host "[OK] ASR started on $AsrPort"
-  } else {
-    Write-Warning "ASR did not open port $AsrPort. Check $stderr"
+  $deadline = (Get-Date).AddSeconds(90)
+  while ((Get-Date) -lt $deadline) {
+    if (Test-Http "$AsrBaseUrl/health") {
+      Write-Host "[OK] ASR started at $AsrBaseUrl"
+      return
+    }
+    Start-Sleep -Milliseconds 500
   }
+  Write-Warning "ASR did not respond at $AsrBaseUrl. Check $stderr"
 }
 
 function Start-NodeAgent {
@@ -122,6 +135,7 @@ function Start-NodeAgent {
 
   $nodeCommand = @"
 `$env:OLLAMA_MODEL = '$OllamaModel'
+`$env:ASR_BASE_URL = 'http://$AsrHost`:$AsrPort'
 Remove-Item Env:OLLAMA_NUM_GPU -ErrorAction SilentlyContinue
 Remove-Item Env:OLLAMA_KEEP_ALIVE -ErrorAction SilentlyContinue
 Set-Location -LiteralPath '$AppDir'
