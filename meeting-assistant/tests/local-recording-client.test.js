@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { resolveLocalAgentBaseUrl, useLocalRecording } from '../src/composables/useLocalRecording.js'
+import { normalizeUploadedAudioFiles, resolveLocalAgentBaseUrl, useLocalRecording } from '../src/composables/useLocalRecording.js'
 
 function fakeStorage(values = {}) {
   const store = new Map(Object.entries(values))
@@ -121,13 +121,34 @@ test('useLocalRecording queues an uploaded audio file without waiting for transc
   assert.equal(calls.filter(call => call.url.endsWith('/status')).length, 0)
 })
 
+test('normalizeUploadedAudioFiles joins sequential browser recording chunks into one WebM', async () => {
+  const files = [
+    new File(['cluster-two'], 'chunk-000002.webm', { type: 'audio/webm' }),
+    new File(['webm-header'], 'chunk-000000.webm', { type: 'audio/webm' }),
+    new File(['cluster-one'], 'chunk-000001.webm', { type: 'audio/webm' })
+  ]
+
+  const normalized = normalizeUploadedAudioFiles(files)
+
+  assert.equal(normalized.length, 1)
+  assert.equal(normalized[0].name, 'meeting-chunks-000000-000002.webm')
+  assert.equal(await normalized[0].text(), 'webm-headercluster-onecluster-two')
+})
+
+test('normalizeUploadedAudioFiles rejects a recording chunk selection with a missing part', () => {
+  assert.throws(() => normalizeUploadedAudioFiles([
+    new File(['header'], 'chunk-000000.webm', { type: 'audio/webm' }),
+    new File(['later'], 'chunk-000002.webm', { type: 'audio/webm' })
+  ]), /missing chunk 000001/i)
+})
+
 test('useLocalRecording lists persisted jobs and retries a failed recording', async () => {
   const calls = []
   const client = useLocalRecording({
     baseUrl: 'http://local.test/api',
     fetchImpl: async (url, options) => {
       calls.push({ url, options })
-      if (url.endsWith('/recordings')) {
+      if (url.startsWith('http://local.test/api/local/recordings?')) {
         return Response.json([{ id: 'old-job', status: 'failed', error: 'temporary' }])
       }
       if (url.endsWith('/old-job/retry')) {
@@ -137,12 +158,13 @@ test('useLocalRecording lists persisted jobs and retries a failed recording', as
     }
   })
 
-  const jobs = await client.listRecordingJobs()
+  const jobs = await client.listRecordingJobs('meeting-1')
   const retry = await client.retryRecording('old-job')
 
   assert.equal(jobs[0].id, 'old-job')
   assert.equal(retry.status, 'queued')
   assert.equal(calls[1].options.method, 'POST')
+  assert.equal(calls[0].url, 'http://local.test/api/local/recordings?meetingId=meeting-1')
 })
 
 test('useLocalRecording sends stored meeting access token to cloud API proxy', async () => {

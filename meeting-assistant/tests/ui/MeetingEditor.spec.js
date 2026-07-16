@@ -33,6 +33,7 @@ vi.mock('@/composables/useAsr.js', () => ({
 }))
 
 vi.mock('@/composables/useLocalRecording.js', () => ({
+  normalizeUploadedAudioFiles: files => files,
   useLocalRecording: () => ({
     checkHealth: clients.checkHealth,
     startRecording: clients.startRecording,

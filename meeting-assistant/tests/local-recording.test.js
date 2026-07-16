@@ -44,6 +44,25 @@ test('uploaded audio chunks are reassembled in byte order without decoding them'
   }
 })
 
+test('uploaded audio records the meeting that owns the transcription job', async () => {
+  const recordingsDir = await mkdtemp(path.join(os.tmpdir(), 'meeting-upload-owner-'))
+  try {
+    const session = await startAudioUploadSession({
+      recordingsDir,
+      id: 'upload-owner-1',
+      filename: 'meeting.mp3',
+      size: 5,
+      meetingId: 'meeting-owner-1'
+    })
+    await saveUploadedAudioChunk({ recordingsDir, uploadId: session.id, index: 0, data: Buffer.from('audio') })
+    const file = await finalizeUploadedAudioFile({ recordingsDir, uploadId: session.id, chunkCount: 1 })
+
+    assert.equal(file.meetingId, 'meeting-owner-1')
+  } finally {
+    await rm(recordingsDir, { recursive: true, force: true })
+  }
+})
+
 test('uploaded audio job retries from the assembled source file', async () => {
   const recordingsDir = await mkdtemp(path.join(os.tmpdir(), 'meeting-upload-job-'))
   try {
@@ -177,6 +196,7 @@ test('local recording stores ordered chunks and finalizes a webm file', async ()
       recordingsDir,
       id: 'meeting-1',
       title: '项目例会',
+      meetingId: 'meeting-owner-1',
       now: new Date('2026-07-09T03:00:00.000Z')
     })
 
@@ -199,6 +219,7 @@ test('local recording stores ordered chunks and finalizes a webm file', async ()
 
     assert.equal(file.filename, 'meeting.webm')
     assert.equal(file.mimeType, 'audio/webm')
+    assert.equal(session.meetingId, 'meeting-owner-1')
     assert.equal(await readFile(file.filePath, 'utf8'), 'first-second')
   } finally {
     await rm(recordingsDir, { recursive: true, force: true })

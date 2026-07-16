@@ -2,6 +2,34 @@ import { fetchWithAuth } from './useAuthToken.js'
 
 const DEFAULT_LOCAL_AGENT_BASE_URL = 'http://127.0.0.1:3001/api'
 export const DEFAULT_AUDIO_UPLOAD_CHUNK_SIZE = 16 * 1024 * 1024
+const RECORDING_CHUNK_FILENAME_RE = /^chunk-(\d+)\.webm$/i
+
+export function normalizeUploadedAudioFiles(files) {
+  const selectedFiles = Array.from(files || [])
+  if (selectedFiles.length < 2) return selectedFiles
+
+  const chunks = selectedFiles.map(file => {
+    const match = String(file?.name || '').match(RECORDING_CHUNK_FILENAME_RE)
+    return match ? { file, index: Number(match[1]), width: match[1].length } : null
+  })
+  if (chunks.some(chunk => !chunk)) return selectedFiles
+
+  chunks.sort((left, right) => left.index - right.index)
+  for (let index = 1; index < chunks.length; index += 1) {
+    const expected = chunks[index - 1].index + 1
+    if (chunks[index].index !== expected) {
+      throw new Error(`Recording chunks are incomplete: missing chunk ${String(expected).padStart(chunks[0].width, '0')}.`)
+    }
+  }
+
+  const first = String(chunks[0].index).padStart(chunks[0].width, '0')
+  const last = String(chunks.at(-1).index).padStart(chunks[0].width, '0')
+  return [new File(
+    chunks.map(chunk => chunk.file),
+    `meeting-chunks-${first}-${last}.webm`,
+    { type: 'audio/webm' }
+  )]
+}
 
 export function resolveLocalAgentBaseUrl({ env = import.meta.env, location = globalThis.location } = {}) {
   if (env?.VITE_LOCAL_AGENT_BASE_URL) {
@@ -87,8 +115,9 @@ export function useLocalRecording(options = {}) {
     })
   }
 
-  function listRecordingJobs() {
-    return requestJson(`${baseUrl}/local/recordings`)
+  function listRecordingJobs(meetingId = '') {
+    const query = meetingId ? `?meetingId=${encodeURIComponent(meetingId)}` : ''
+    return requestJson(`${baseUrl}/local/recordings${query}`)
   }
 
   function retryRecording(recordingId) {

@@ -42,19 +42,15 @@ def _transcribe_wav_data(active_recognizer: Recognizer, wav_data: bytes, info) -
         overlap_seconds=TRANSCRIBE_OVERLAP_SECONDS,
     )
     segments = []
-    try:
-        for chunk in chunks:
-            result = active_recognizer.transcribe_wav(chunk.data)
-            segments.append(
-                {
-                    "startSeconds": round(chunk.start_seconds, 3),
-                    "endSeconds": round(chunk.end_seconds, 3),
-                    "text": _clean_transcript_text(result.text),
-                }
-            )
-    finally:
-        active_recognizer.unload_model()
-
+    for chunk in chunks:
+        result = active_recognizer.transcribe_wav(chunk.data)
+        segments.append(
+            {
+                "startSeconds": round(chunk.start_seconds, 3),
+                "endSeconds": round(chunk.end_seconds, 3),
+                "text": _clean_transcript_text(result.text),
+            }
+        )
     return {
         "text": "\n\n".join(segment["text"] for segment in segments if segment["text"]),
         "language": "zh-CN",
@@ -99,6 +95,11 @@ def create_app(recognizer: Recognizer | None = None) -> FastAPI:
             "device": active_recognizer.device,
             "modelLoaded": active_recognizer.model_loaded,
         }
+
+    @app.post("/unload")
+    def unload():
+        active_recognizer.unload_model()
+        return {"ok": True, "modelLoaded": active_recognizer.model_loaded}
 
     @app.post("/transcribe")
     async def transcribe(file: UploadFile = File(...)):

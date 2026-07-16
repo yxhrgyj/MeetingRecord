@@ -11,6 +11,27 @@ const SUPPORTED_AUDIO_EXTENSIONS = new Set(['.mp3', '.wav', '.webm'])
 export const MAX_AUDIO_UPLOAD_BYTES = 1024 * 1024 * 1024
 
 let recordingJobQueue = Promise.resolve()
+let queuedRecordingJobCount = 0
+
+async function releaseAsrModel(asrBaseUrl) {
+  try {
+    await fetch(`${asrBaseUrl.replace(/\/$/, '')}/unload`, { method: 'POST' })
+  } catch {
+    // A release failure is non-fatal: the ASR process may already be stopping.
+  }
+}
+
+function enqueueRecordingJob(task, asrBaseUrl) {
+  queuedRecordingJobCount += 1
+  recordingJobQueue = recordingJobQueue
+    .catch(() => undefined)
+    .then(task)
+    .finally(() => {
+      queuedRecordingJobCount -= 1
+      if (queuedRecordingJobCount === 0) void releaseAsrModel(asrBaseUrl)
+    })
+  return recordingJobQueue
+}
 
 function safeRecordingId(id) {
   const normalized = String(id || '').trim()
@@ -26,6 +47,10 @@ function recordingPath(recordingsDir, recordingId) {
 
 function recordingJobPath(recordingsDir, recordingId) {
   return path.join(recordingPath(recordingsDir, recordingId), RECORDING_JOB_FILENAME)
+}
+
+function recordingManifestPath(recordingsDir, recordingId) {
+  return path.join(recordingPath(recordingsDir, recordingId), 'manifest.json')
 }
 
 function audioUploadManifestPath(recordingsDir, uploadId) {
@@ -61,18 +86,19 @@ async function readError(response) {
   return payload?.detail || payload?.message || `Request failed with ${response.status}`
 }
 
-export async function startRecordingSession({ recordingsDir, id = randomUUID(), title = '', now = new Date() }) {
+export async function startRecordingSession({ recordingsDir, id = randomUUID(), title = '', meetingId = '', now = new Date() }) {
   const recordingId = safeRecordingId(id)
   const dir = recordingPath(recordingsDir, recordingId)
   await mkdir(dir, { recursive: true })
   const manifest = {
     id: recordingId,
     title: String(title || '').trim(),
+    meetingId: String(meetingId || '').trim(),
     createdAt: now.toISOString(),
     chunks: []
   }
   await writeFile(path.join(dir, 'manifest.json'), JSON.stringify(manifest, null, 2), 'utf8')
-  return { id: recordingId, dir, title: manifest.title, createdAt: manifest.createdAt }
+  return { id: recordingId, dir, title: manifest.title, meetingId: manifest.meetingId, createdAt: manifest.createdAt }
 }
 
 export async function startAudioUploadSession({
@@ -82,6 +108,7 @@ export async function startAudioUploadSession({
   mimeType = 'application/octet-stream',
   size = 0,
   title = '',
+  meetingId = '',
   now = new Date()
 }) {
   const uploadId = safeRecordingId(id)
@@ -95,6 +122,7 @@ export async function startAudioUploadSession({
   const manifest = {
     id: uploadId,
     title: String(title || '').trim(),
+    meetingId: String(meetingId || '').trim(),
     filename: safeFilename,
     mimeType: String(mimeType || 'application/octet-stream'),
     size: declaredSize,
@@ -102,7 +130,7 @@ export async function startAudioUploadSession({
     status: 'uploading'
   }
   await writeFile(audioUploadManifestPath(recordingsDir, uploadId), JSON.stringify(manifest, null, 2), 'utf8')
-  return { id: uploadId, filename: safeFilename, mimeType: manifest.mimeType, size: manifest.size, title: manifest.title }
+  return { id: uploadId, filename: safeFilename, mimeType: manifest.mimeType, size: manifest.size, title: manifest.title, meetingId: manifest.meetingId }
 }
 
 export async function saveUploadedAudioChunk({ recordingsDir, uploadId, index, data }) {
@@ -150,7 +178,8 @@ export async function finalizeUploadedAudioFile({ recordingsDir, uploadId, chunk
     filename: manifest.filename,
     mimeType: manifest.mimeType,
     size: sourceStat.size,
-    chunkCount: expectedCount
+    chunkCount: expectedCount,
+    meetingId: manifest.meetingId
   }
 }
 
@@ -387,8 +416,17 @@ export async function startRecordingJob({
     return existing
   }
 
+  let meetingId = ''
+  try {
+    const manifest = JSON.parse(await readFile(recordingManifestPath(recordingsDir, recordingId), 'utf8'))
+    meetingId = String(manifest.meetingId || '')
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error
+  }
+
   const job = {
     id: safeRecordingId(recordingId),
+    meetingId: existing?.meetingId || meetingId,
     status: 'queued',
     createdAt: now.toISOString(),
     updatedAt: now.toISOString(),
@@ -397,16 +435,14 @@ export async function startRecordingJob({
     attempt: Number(existing?.attempt || 0) + 1
   }
   await writeRecordingJob({ recordingsDir, recordingId: job.id, job })
-  recordingJobQueue = recordingJobQueue
-    .catch(() => undefined)
-    .then(() => processRecordingJob({
+  void enqueueRecordingJob(() => processRecordingJob({
       recordingsDir,
       recordingId: job.id,
       asrBaseUrl,
       fetchImpl,
       summarizeFn,
       summarizeRecording
-    }))
+    }), asrBaseUrl)
   return job
 }
 
@@ -429,6 +465,7 @@ export async function startAudioUploadJob({
     id,
     sourceType: 'uploaded',
     sourceFilename: manifest.filename,
+    meetingId: manifest.meetingId || '',
     status: 'queued',
     createdAt: existing?.createdAt || now.toISOString(),
     updatedAt: now.toISOString(),
@@ -437,15 +474,13 @@ export async function startAudioUploadJob({
     attempt: Number(existing?.attempt || 0) + 1
   }
   await writeRecordingJob({ recordingsDir, recordingId: id, job })
-  recordingJobQueue = recordingJobQueue
-    .catch(() => undefined)
-    .then(() => processRecordingJob({
+  void enqueueRecordingJob(() => processRecordingJob({
       recordingsDir,
       recordingId: id,
       asrBaseUrl,
       fetchImpl,
       summarizeRecording: false
-    }))
+    }), asrBaseUrl)
   return job
 }
 
@@ -480,13 +515,13 @@ export async function retryRecordingJob({
   })
 }
 
-export async function listRecordingJobs({ recordingsDir }) {
+export async function listRecordingJobs({ recordingsDir, meetingId = '' }) {
   const entries = await readdir(recordingsDir, { withFileTypes: true })
   const jobs = []
   for (const entry of entries) {
     if (!entry.isDirectory() || !/^[a-zA-Z0-9_-]+$/.test(entry.name)) continue
     const job = await readRecordingJob({ recordingsDir, recordingId: entry.name })
-    if (job) jobs.push(job)
+    if (job && (!meetingId || job.meetingId === meetingId)) jobs.push(job)
   }
   return jobs.sort((left, right) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')))
 }

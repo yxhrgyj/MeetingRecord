@@ -143,7 +143,8 @@ app.post('/api/local/recordings/start', async (req, res) => {
   try {
     const session = await startRecordingSession({
       recordingsDir: RECORDINGS_DIR,
-      title: req.body?.title || ''
+      title: req.body?.title || '',
+      meetingId: req.body?.meetingId || ''
     })
     res.status(201).json(session)
   } catch (error) {
@@ -154,7 +155,7 @@ app.post('/api/local/recordings/start', async (req, res) => {
 
 app.get('/api/local/recordings', async (req, res) => {
   try {
-    res.json(await listRecordingJobs({ recordingsDir: RECORDINGS_DIR }))
+    res.json(await listRecordingJobs({ recordingsDir: RECORDINGS_DIR, meetingId: req.query.meetingId || '' }))
   } catch (error) {
     console.error('Local recording list failed:', error)
     res.status(500).json({ message: error?.message || 'Failed to list recording jobs.' })
@@ -168,7 +169,8 @@ app.post('/api/local/uploads/start', async (req, res) => {
       filename: req.body?.filename,
       mimeType: req.body?.mimeType,
       size: req.body?.size,
-      title: req.body?.title
+      title: req.body?.title,
+      meetingId: req.body?.meetingId || ''
     })
     res.status(201).json(session)
   } catch (error) {

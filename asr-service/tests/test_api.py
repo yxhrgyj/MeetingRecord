@@ -101,7 +101,7 @@ def test_transcribe_returns_timestamped_segments_for_long_upload(monkeypatch):
     assert body["text"] == "test transcript\n\ntest transcript\n\ntest transcript"
 
 
-def test_transcribe_unloads_recognizer_after_all_chunks(monkeypatch):
+def test_transcribe_keeps_recognizer_loaded_until_explicitly_released(monkeypatch):
     recognizer = FakeRecognizer()
     monkeypatch.setattr(main_module, "TRANSCRIBE_CHUNK_SECONDS", 1.0)
     monkeypatch.setattr(main_module, "TRANSCRIBE_OVERLAP_SECONDS", 0.2)
@@ -113,6 +113,12 @@ def test_transcribe_unloads_recognizer_after_all_chunks(monkeypatch):
     )
 
     assert response.status_code == 200
+    assert recognizer.events == ["transcribe:1", "transcribe:2", "transcribe:3"]
+    assert recognizer.model_loaded is True
+
+    released = client.post("/unload")
+
+    assert released.status_code == 200
     assert recognizer.events == ["transcribe:1", "transcribe:2", "transcribe:3", "unload"]
     assert recognizer.model_loaded is False
 

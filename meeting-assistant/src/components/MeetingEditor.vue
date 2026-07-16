@@ -2,7 +2,7 @@
 import { computed, reactive, ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { useApi } from '@/composables/useApi.js'
 import { formatTranscriptForEditor, useAsr } from '@/composables/useAsr.js'
-import { useLocalRecording } from '@/composables/useLocalRecording.js'
+import { normalizeUploadedAudioFiles, useLocalRecording } from '@/composables/useLocalRecording.js'
 import { useSummarizer } from '@/composables/useSummarizer.js'
 import { useDateUtils } from '@/composables/useDateUtils.js'
 import { canAutoSaveMeeting } from '@/domain/meetingDraft.js'
@@ -64,6 +64,7 @@ const recordingTimer = ref(null)
 const recordingSeconds = ref(0)
 const autoSaveTimer = ref(null)
 const autoSaveLabel = ref('')
+const localMeetingId = ref(props.initialData?.id || '')
 
 const pendingRecordingCount = computed(() => recordingSegments.value.filter(segment => (
   ['queued', 'processing'].includes(segment.status)
@@ -223,9 +224,23 @@ function chooseAudioFile() {
 }
 
 async function handleAudioSelected(event) {
-  const files = Array.from(event.target.files || [])
+  let files = Array.from(event.target.files || [])
   event.target.value = ''
   if (!files.length) return
+
+  try {
+    await ensureMeetingForLocalRecording()
+  } catch (error) {
+    uploadStatus.value = error?.message || '请先填写会议标题和日期'
+    return
+  }
+
+  try {
+    files = normalizeUploadedAudioFiles(files)
+  } catch (error) {
+    uploadStatus.value = error?.message || '录音分片不完整，无法合并上传'
+    return
+  }
 
   if (!localRecording.queueUploadedAudio) {
     for (const file of files) await transcribeSingleUploadedAudio(file)
@@ -244,7 +259,8 @@ async function handleAudioSelected(event) {
         const job = await localRecording.queueUploadedAudio(file, {
           title: form.title,
           date: form.date,
-          startTime: form.startTime
+          startTime: form.startTime,
+          meetingId: localMeetingId.value
         }, {
           onProgress: ({ phase, index: chunkIndex, total }) => {
             if (phase === 'upload') uploadStatus.value = `正在上传 ${position + 1}/${files.length}: ${file.name} ${chunkIndex + 1}/${total}`
@@ -273,6 +289,12 @@ async function handleAudioSelected(event) {
   } finally {
     isTranscribing.value = false
   }
+}
+
+async function ensureMeetingForLocalRecording() {
+  if (!form.id) await doAutoSave()
+  if (!form.id) throw new Error('请先填写会议标题和日期，再上传或录音。')
+  localMeetingId.value = form.id
 }
 
 async function transcribeSingleUploadedAudio(file) {
@@ -317,7 +339,7 @@ async function transcribeSingleUploadedAudio(file) {
 async function loadPersistedRecordingJobs() {
   if (!localRecording.listRecordingJobs) return
   try {
-    const jobs = await localRecording.listRecordingJobs()
+    const jobs = await localRecording.listRecordingJobs(localMeetingId.value)
     persistedRecordingJobs.value = (Array.isArray(jobs) ? jobs : [])
       .filter(job => ['queued', 'processing', 'failed'].includes(job.status))
   } catch (error) {
@@ -471,13 +493,15 @@ async function startMeetingRecording() {
   }
 
   try {
+    await ensureMeetingForLocalRecording()
     recordingStatus.value = '检测本机服务...'
     await localRecording.checkHealth()
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
     const session = await localRecording.startRecording({
       title: form.title,
       date: form.date,
-      startTime: form.startTime
+      startTime: form.startTime,
+      meetingId: localMeetingId.value
     })
 
     if (!form.startTime) recordStartTime()
