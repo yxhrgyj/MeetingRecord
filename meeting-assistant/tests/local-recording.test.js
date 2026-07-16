@@ -19,6 +19,8 @@ import {
   retryRecordingJob
 } from '../server/localRecording.js'
 
+import { listRecordingJobs } from '../server/localRecording.js'
+
 test('uploaded audio chunks are reassembled in byte order without decoding them', async () => {
   const recordingsDir = await mkdtemp(path.join(os.tmpdir(), 'meeting-upload-'))
   try {
@@ -58,6 +60,35 @@ test('uploaded audio records the meeting that owns the transcription job', async
     const file = await finalizeUploadedAudioFile({ recordingsDir, uploadId: session.id, chunkCount: 1 })
 
     assert.equal(file.meetingId, 'meeting-owner-1')
+  } finally {
+    await rm(recordingsDir, { recursive: true, force: true })
+  }
+})
+
+test('listing recording jobs without a meeting id never exposes historical jobs', async () => {
+  const recordingsDir = await mkdtemp(path.join(os.tmpdir(), 'meeting-job-scope-'))
+  try {
+    const session = await startAudioUploadSession({
+      recordingsDir,
+      id: 'scoped-upload-1',
+      filename: 'meeting.mp3',
+      size: 5,
+      meetingId: 'meeting-1'
+    })
+    await saveUploadedAudioChunk({ recordingsDir, uploadId: session.id, index: 0, data: Buffer.from('audio') })
+    await finalizeUploadedAudioFile({ recordingsDir, uploadId: session.id, chunkCount: 1 })
+    await startAudioUploadJob({
+      recordingsDir,
+      uploadId: session.id,
+      asrBaseUrl: 'http://asr.test',
+      fetchImpl: async () => new Response(JSON.stringify({ detail: 'unavailable' }), { status: 503 })
+    })
+
+    const unscoped = await listRecordingJobs({ recordingsDir })
+    const unrelated = await listRecordingJobs({ recordingsDir, meetingId: 'meeting-2' })
+
+    assert.deepEqual(unscoped, [])
+    assert.deepEqual(unrelated, [])
   } finally {
     await rm(recordingsDir, { recursive: true, force: true })
   }

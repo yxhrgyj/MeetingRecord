@@ -337,7 +337,10 @@ async function transcribeSingleUploadedAudio(file) {
 }
 
 async function loadPersistedRecordingJobs() {
-  if (!localRecording.listRecordingJobs) return
+  if (!localRecording.listRecordingJobs || !localMeetingId.value) {
+    persistedRecordingJobs.value = []
+    return
+  }
   try {
     const jobs = await localRecording.listRecordingJobs(localMeetingId.value)
     persistedRecordingJobs.value = (Array.isArray(jobs) ? jobs : [])

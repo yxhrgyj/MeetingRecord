@@ -516,12 +516,14 @@ export async function retryRecordingJob({
 }
 
 export async function listRecordingJobs({ recordingsDir, meetingId = '' }) {
+  if (!meetingId) return []
+
   const entries = await readdir(recordingsDir, { withFileTypes: true })
   const jobs = []
   for (const entry of entries) {
     if (!entry.isDirectory() || !/^[a-zA-Z0-9_-]+$/.test(entry.name)) continue
     const job = await readRecordingJob({ recordingsDir, recordingId: entry.name })
-    if (job && (!meetingId || job.meetingId === meetingId)) jobs.push(job)
+    if (job?.meetingId === meetingId) jobs.push(job)
   }
   return jobs.sort((left, right) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')))
 }
