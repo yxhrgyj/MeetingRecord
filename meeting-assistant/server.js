@@ -10,6 +10,7 @@ import {
   finalizeUploadedAudioFile,
   listRecordingJobs,
   readRecordingJob,
+  retryRecordingJob,
   saveRecordingChunk,
   saveUploadedAudioChunk,
   startAudioUploadJob,
@@ -249,12 +250,10 @@ app.post('/api/local/recordings/:id/finish', async (req, res) => {
 
 app.post('/api/local/recordings/:id/retry', async (req, res) => {
   try {
-    const job = await startRecordingJob({
+    const job = await retryRecordingJob({
       recordingsDir: RECORDINGS_DIR,
       recordingId: req.params.id,
-      asrBaseUrl: ASR_BASE_URL,
-      summarizeRecording: false,
-      retry: true
+      asrBaseUrl: ASR_BASE_URL
     })
     if (job.status === 'completed') {
       return res.json({ id: job.id, status: 'completed', result: job.result })

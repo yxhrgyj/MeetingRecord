@@ -140,6 +140,17 @@ export function useLocalRecording(options = {}) {
   }
 
   async function transcribeUploadedAudio(file, metadata = {}, options = {}) {
+    const job = await queueUploadedAudio(file, metadata, options)
+    if (job.status === 'completed') return job.result ? { ...job.result } : job
+    if (job.status === 'failed') throw new Error(job.error || 'Audio transcription failed.')
+
+    return waitForRecording(job.id, {
+      ...options,
+      onStatus: (recordingJob) => options.onStatus?.(recordingJob)
+    })
+  }
+
+  async function queueUploadedAudio(file, metadata = {}, options = {}) {
     if (!file?.size) throw new Error('Audio file is empty.')
     const chunkSize = Math.max(1, Number(options.chunkSize || DEFAULT_AUDIO_UPLOAD_CHUNK_SIZE))
     const chunkCount = Math.ceil(file.size / chunkSize)
@@ -162,15 +173,7 @@ export function useLocalRecording(options = {}) {
     }
 
     const initial = await finishAudioUpload(session.id, chunkCount)
-    if (initial.status === 'completed') return initial.result ? { ...initial.result } : initial
-    if (initial.status === 'failed') throw new Error(initial.error || 'Audio transcription failed.')
-
-    return waitForRecording(session.id, {
-      ...options,
-      onStatus: (job) => {
-        options.onStatus?.(job)
-      }
-    })
+    return { ...initial, id: initial.id || session.id }
   }
 
   return {
@@ -180,6 +183,7 @@ export function useLocalRecording(options = {}) {
     startAudioUpload,
     uploadAudioChunk,
     finishAudioUpload,
+    queueUploadedAudio,
     transcribeUploadedAudio,
     listRecordingJobs,
     retryRecording,

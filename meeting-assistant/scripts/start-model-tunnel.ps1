@@ -155,6 +155,18 @@ if (-not $tunnelRunToken) {
     throw "Wrangler config was not found at $WranglerConfigPath. Run npx.cmd wrangler login or cloudflared tunnel login first."
   }
 
+  # Wrangler refreshes a stored OAuth session when it checks the current user.
+  # Refresh before reading the token because the raw value in default.toml can expire.
+  $npxCommand = Get-Command npx.cmd -ErrorAction SilentlyContinue
+  if ($npxCommand) {
+    & $npxCommand.Source --no-install wrangler whoami *> $null
+    if ($LASTEXITCODE -ne 0) {
+      Write-Warning 'Wrangler could not refresh its Cloudflare OAuth session. The existing token will be tried once.'
+    }
+  } else {
+    Write-Warning 'npx.cmd was not found. The existing Wrangler OAuth token will be tried without refreshing it.'
+  }
+
   $wranglerConfig = Get-Content -Raw -LiteralPath $WranglerConfigPath
   $oauthMatch = [regex]::Match($wranglerConfig, 'oauth_token\s*=\s*"([^"]+)"')
   if (-not $oauthMatch.Success) {
@@ -162,13 +174,17 @@ if (-not $tunnelRunToken) {
   }
 
   $apiToken = $oauthMatch.Groups[1].Value
-  $response = Invoke-RestMethod `
-    -Method Get `
-    -Uri "https://api.cloudflare.com/client/v4/accounts/$AccountId/cfd_tunnel/$TunnelId/token" `
-    -Headers @{ Authorization = "Bearer $apiToken" }
+  try {
+    $response = Invoke-RestMethod `
+      -Method Get `
+      -Uri "https://api.cloudflare.com/client/v4/accounts/$AccountId/cfd_tunnel/$TunnelId/token" `
+      -Headers @{ Authorization = "Bearer $apiToken" }
+  } catch {
+    throw 'Could not authenticate with Cloudflare to fetch the Tunnel token. Run npx.cmd wrangler login, authorize the correct Cloudflare account, then start the tunnel again.'
+  }
 
   if (-not $response.success) {
-    throw 'Could not fetch Cloudflare Tunnel token.'
+    throw 'Cloudflare rejected the Tunnel token request. Run npx.cmd wrangler login, authorize the correct Cloudflare account, then start the tunnel again.'
   }
 
   $tunnelRunToken = $response.result

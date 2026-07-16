@@ -99,6 +99,28 @@ test('useLocalRecording uploads a selected audio file in bounded transport chunk
   assert.equal(calls.find(call => call.url.endsWith('/uploads/start')).options.method, 'POST')
 })
 
+test('useLocalRecording queues an uploaded audio file without waiting for transcription', async () => {
+  const calls = []
+  const client = useLocalRecording({
+    baseUrl: 'http://local.test/api',
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options })
+      if (url.endsWith('/uploads/start')) return Response.json({ id: 'upload-1' }, { status: 201 })
+      if (url.includes('/uploads/upload-1/chunks')) return Response.json({ index: 0 }, { status: 201 })
+      if (url.endsWith('/uploads/upload-1/finish')) return Response.json({ id: 'upload-1', status: 'queued' }, { status: 202 })
+      throw new Error(`unexpected request ${url}`)
+    }
+  })
+
+  const job = await client.queueUploadedAudio(
+    new File(['audio'], 'meeting.mp3', { type: 'audio/mpeg' }),
+    { title: 'Batch meeting' }
+  )
+
+  assert.deepEqual(job, { id: 'upload-1', status: 'queued' })
+  assert.equal(calls.filter(call => call.url.endsWith('/status')).length, 0)
+})
+
 test('useLocalRecording lists persisted jobs and retries a failed recording', async () => {
   const calls = []
   const client = useLocalRecording({

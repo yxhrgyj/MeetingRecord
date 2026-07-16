@@ -10,6 +10,8 @@ const AUDIO_UPLOAD_PART_RE = /^upload-(\d+)\.part$/
 const SUPPORTED_AUDIO_EXTENSIONS = new Set(['.mp3', '.wav', '.webm'])
 export const MAX_AUDIO_UPLOAD_BYTES = 1024 * 1024 * 1024
 
+let recordingJobQueue = Promise.resolve()
+
 function safeRecordingId(id) {
   const normalized = String(id || '').trim()
   if (!/^[a-zA-Z0-9_-]+$/.test(normalized)) {
@@ -395,16 +397,16 @@ export async function startRecordingJob({
     attempt: Number(existing?.attempt || 0) + 1
   }
   await writeRecordingJob({ recordingsDir, recordingId: job.id, job })
-  setTimeout(() => {
-    void processRecordingJob({
+  recordingJobQueue = recordingJobQueue
+    .catch(() => undefined)
+    .then(() => processRecordingJob({
       recordingsDir,
       recordingId: job.id,
       asrBaseUrl,
       fetchImpl,
       summarizeFn,
       summarizeRecording
-    })
-  }, 0)
+    }))
   return job
 }
 
@@ -435,16 +437,47 @@ export async function startAudioUploadJob({
     attempt: Number(existing?.attempt || 0) + 1
   }
   await writeRecordingJob({ recordingsDir, recordingId: id, job })
-  setTimeout(() => {
-    void processRecordingJob({
+  recordingJobQueue = recordingJobQueue
+    .catch(() => undefined)
+    .then(() => processRecordingJob({
       recordingsDir,
       recordingId: id,
       asrBaseUrl,
       fetchImpl,
       summarizeRecording: false
-    })
-  }, 0)
+    }))
   return job
+}
+
+export async function retryRecordingJob({
+  recordingsDir,
+  recordingId,
+  asrBaseUrl,
+  fetchImpl = globalThis.fetch,
+  summarizeFn
+}) {
+  const existing = await readRecordingJob({ recordingsDir, recordingId })
+  if (!existing) throw new Error('Recording job not found.')
+
+  if (existing.sourceType === 'uploaded') {
+    return startAudioUploadJob({
+      recordingsDir,
+      uploadId: recordingId,
+      asrBaseUrl,
+      fetchImpl,
+      retry: true
+    })
+  }
+
+  return startRecordingJob({
+    recordingsDir,
+    recordingId,
+    asrBaseUrl,
+    fetchImpl,
+    summarizeFn,
+    summarizeRecording: false,
+    retry: true
+  })
 }
 
 export async function listRecordingJobs({ recordingsDir }) {

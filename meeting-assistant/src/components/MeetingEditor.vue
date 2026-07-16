@@ -43,6 +43,7 @@ const audioInputRef = ref(null)
 const assistantOpen = ref(false)
 const activeSection = ref('summary')
 const isTranscribing = ref(false)
+const uploadStatus = ref('')
 const isSummarizing = ref(false)
 const isRecording = ref(false)
 const isFinishingRecording = ref(false)
@@ -218,13 +219,63 @@ function runToolbarCommand(command) {
 
 // ===== ASR 音频转写 =====
 function chooseAudioFile() {
-  if (!isTranscribing.value) audioInputRef.value?.click()
+  audioInputRef.value?.click()
 }
 
 async function handleAudioSelected(event) {
-  const file = event.target.files?.[0]
+  const files = Array.from(event.target.files || [])
   event.target.value = ''
-  if (!file) return
+  if (!files.length) return
+
+  if (!localRecording.queueUploadedAudio) {
+    for (const file of files) await transcribeSingleUploadedAudio(file)
+    return
+  }
+
+  if (!recordingSegments.value.length) recordingTranscriptBase.value = form.transcript
+  isTranscribing.value = true
+  try {
+    for (let position = 0; position < files.length; position += 1) {
+      const file = files[position]
+      const index = recordingNextIndex.value
+      recordingNextIndex.value += 1
+      uploadStatus.value = `正在上传 ${position + 1}/${files.length}: ${file.name}`
+      try {
+        const job = await localRecording.queueUploadedAudio(file, {
+          title: form.title,
+          date: form.date,
+          startTime: form.startTime
+        }, {
+          onProgress: ({ phase, index: chunkIndex, total }) => {
+            if (phase === 'upload') uploadStatus.value = `正在上传 ${position + 1}/${files.length}: ${file.name} ${chunkIndex + 1}/${total}`
+          }
+        })
+        const segment = {
+          id: job.id,
+          index,
+          status: job.status || 'queued',
+          transcript: job.result?.transcript || '',
+          error: job.error || ''
+        }
+        upsertRecordingSegment(segment)
+        if (segment.status === 'completed') {
+          persistedRecordingJobs.value = persistedRecordingJobs.value.filter(item => item.id !== segment.id)
+        } else if (segment.status === 'failed') {
+          persistedRecordingJobs.value.push({ id: segment.id, status: 'failed', error: segment.error })
+        } else if (localRecording.waitForRecording) {
+          void monitorRecordingSegment(segment)
+        }
+      } catch (error) {
+        uploadStatus.value = `上传失败: ${file.name}，可重新选择该文件上传`
+      }
+    }
+    uploadStatus.value = `已提交 ${files.length} 个音频，正在后台转写`
+  } finally {
+    isTranscribing.value = false
+  }
+}
+
+async function transcribeSingleUploadedAudio(file) {
 
   isTranscribing.value = true
   asrStatus.value = 'ASR 转写中...'
@@ -917,6 +968,7 @@ onUnmounted(() => {
         :has-content="Boolean(form.transcript.trim())"
         :can-export="Boolean(form.id)"
         :retry-kind="retryKind"
+        :upload-status="uploadStatus"
         :recording-segments="recordingSegments"
         :pending-recording-count="pendingRecordingCount"
         :persisted-recording-jobs="persistedRecordingJobs"
@@ -935,6 +987,7 @@ onUnmounted(() => {
   <input
     ref="audioInputRef"
     type="file"
+    multiple
     accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/webm,.mp3,.wav,.webm"
     class="hidden"
     @change="handleAudioSelected"

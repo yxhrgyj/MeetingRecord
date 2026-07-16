@@ -15,7 +15,8 @@ import {
   startAudioUploadJob,
   startRecordingJob,
   startAudioUploadSession,
-  startRecordingSession
+  startRecordingSession,
+  retryRecordingJob
 } from '../server/localRecording.js'
 
 test('uploaded audio chunks are reassembled in byte order without decoding them', async () => {
@@ -80,6 +81,90 @@ test('uploaded audio job retries from the assembled source file', async () => {
     assert.equal(completed.status, 'completed')
     assert.equal(completed.result.transcript, 'uploaded transcript')
     assert.equal(calls, 1)
+  } finally {
+    await rm(recordingsDir, { recursive: true, force: true })
+  }
+})
+
+test('retryRecordingJob preserves the uploaded-audio processing pipeline', async () => {
+  const recordingsDir = await mkdtemp(path.join(os.tmpdir(), 'meeting-upload-retry-'))
+  try {
+    const session = await startAudioUploadSession({
+      recordingsDir,
+      id: 'upload-retry-1',
+      filename: 'meeting.mp3',
+      mimeType: 'audio/mpeg',
+      size: 5
+    })
+    await saveUploadedAudioChunk({ recordingsDir, uploadId: session.id, index: 0, data: Buffer.from('audio') })
+    await finalizeUploadedAudioFile({ recordingsDir, uploadId: session.id, chunkCount: 1 })
+    await startAudioUploadJob({
+      recordingsDir,
+      uploadId: session.id,
+      asrBaseUrl: 'http://asr.test',
+      fetchImpl: async () => new Response(JSON.stringify({ detail: 'ASR unavailable' }), { status: 503 })
+    })
+
+    let failed = await readRecordingJob({ recordingsDir, recordingId: session.id })
+    for (let attempt = 0; attempt < 100 && failed?.status !== 'failed'; attempt += 1) {
+      await new Promise(resolve => setTimeout(resolve, 10))
+      failed = await readRecordingJob({ recordingsDir, recordingId: session.id })
+    }
+
+    await retryRecordingJob({
+      recordingsDir,
+      recordingId: session.id,
+      asrBaseUrl: 'http://asr.test',
+      fetchImpl: async () => Response.json({ text: 'retry succeeded', segments: [] })
+    })
+
+    let completed = await readRecordingJob({ recordingsDir, recordingId: session.id })
+    for (let attempt = 0; attempt < 100 && completed?.status !== 'completed'; attempt += 1) {
+      await new Promise(resolve => setTimeout(resolve, 10))
+      completed = await readRecordingJob({ recordingsDir, recordingId: session.id })
+    }
+    assert.equal(completed.status, 'completed')
+    assert.equal(completed.result.transcript, 'retry succeeded')
+  } finally {
+    await rm(recordingsDir, { recursive: true, force: true })
+  }
+})
+
+test('uploaded audio jobs wait for the active ASR job before starting the next one', async () => {
+  const recordingsDir = await mkdtemp(path.join(os.tmpdir(), 'meeting-upload-queue-'))
+  try {
+    for (const id of ['upload-queue-1', 'upload-queue-2']) {
+      const session = await startAudioUploadSession({
+        recordingsDir,
+        id,
+        filename: `${id}.mp3`,
+        mimeType: 'audio/mpeg',
+        size: 5
+      })
+      await saveUploadedAudioChunk({ recordingsDir, uploadId: session.id, index: 0, data: Buffer.from('audio') })
+      await finalizeUploadedAudioFile({ recordingsDir, uploadId: session.id, chunkCount: 1 })
+    }
+
+    const calls = []
+    let releaseFirst
+    const fetchImpl = async (url, options) => {
+      calls.push(options.headers['X-Filename'])
+      if (calls.length === 1) await new Promise(resolve => { releaseFirst = resolve })
+      return Response.json({ text: options.headers['X-Filename'], segments: [] })
+    }
+    await startAudioUploadJob({ recordingsDir, uploadId: 'upload-queue-1', asrBaseUrl: 'http://asr.test', fetchImpl })
+    await startAudioUploadJob({ recordingsDir, uploadId: 'upload-queue-2', asrBaseUrl: 'http://asr.test', fetchImpl })
+    for (let attempt = 0; attempt < 100 && !releaseFirst; attempt += 1) await new Promise(resolve => setTimeout(resolve, 10))
+    assert.deepEqual(calls, ['upload-queue-1.mp3'])
+    releaseFirst()
+
+    let second = await readRecordingJob({ recordingsDir, recordingId: 'upload-queue-2' })
+    for (let attempt = 0; attempt < 100 && second?.status !== 'completed'; attempt += 1) {
+      await new Promise(resolve => setTimeout(resolve, 10))
+      second = await readRecordingJob({ recordingsDir, recordingId: 'upload-queue-2' })
+    }
+    assert.equal(second.status, 'completed')
+    assert.deepEqual(calls, ['upload-queue-1.mp3', 'upload-queue-2.mp3'])
   } finally {
     await rm(recordingsDir, { recursive: true, force: true })
   }

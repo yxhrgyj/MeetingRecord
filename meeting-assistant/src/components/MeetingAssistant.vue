@@ -22,6 +22,7 @@ const props = defineProps({
   canExport: Boolean,
   retryKind: { type: String, default: '' },
   modelLabel: { type: String, default: 'qwen3.5:9b' },
+  uploadStatus: { type: String, default: '' },
   recordingSegments: { type: Array, default: () => [] },
   pendingRecordingCount: { type: Number, default: 0 },
   persistedRecordingJobs: { type: Array, default: () => [] }
@@ -194,6 +195,7 @@ function retry() {
         <span>上传已有音频</span>
         <Upload :size="14" class="text-muted" />
       </button>
+      <p v-if="uploadStatus" class="mt-1 text-[10px] leading-4 text-muted">{{ uploadStatus }}</p>
     </section>
 
     <section class="border-t border-line py-[18px]">
