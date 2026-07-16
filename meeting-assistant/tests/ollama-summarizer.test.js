@@ -19,6 +19,8 @@ test('buildMeetingSummaryPrompt asks for grounded meeting notes', () => {
   assert.match(prompt, /不要编造/)
   assert.match(prompt, /纯文本/)
   assert.match(prompt, /不得使用 Markdown/)
+  assert.match(prompt, /不得输出 HTML/)
+  assert.match(prompt, /不得使用表格/)
   assert.doesNotMatch(prompt, /## 会议纪要草稿/)
   assert.match(prompt, /金额\/预算/)
   assert.match(prompt, /\[00:00-00:20\]\n讨论预算五百一十万。/)

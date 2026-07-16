@@ -13,10 +13,67 @@ function sectionAfterHeading(source, heading) {
   return source.slice(heading.length).trim()
 }
 
+function markdownTableCells(line) {
+  return line.trim().slice(1, -1).split('|').map(cell => cell.trim())
+}
+
+function isMarkdownTableSeparator(cells) {
+  return cells.length > 0 && cells.every(cell => /^:?-{3,}:?$/.test(cell))
+}
+
+function normalizeMarkdownTables(summary) {
+  const lines = summary.split('\n')
+  const normalized = []
+
+  for (let index = 0; index < lines.length;) {
+    if (!/^\s*\|.*\|\s*$/.test(lines[index])) {
+      normalized.push(lines[index])
+      index += 1
+      continue
+    }
+
+    const tableLines = []
+    while (index < lines.length && /^\s*\|.*\|\s*$/.test(lines[index])) {
+      tableLines.push(lines[index])
+      index += 1
+    }
+
+    const header = markdownTableCells(tableLines[0])
+    const separator = tableLines[1] ? markdownTableCells(tableLines[1]) : []
+    if (tableLines.length < 3 || !isMarkdownTableSeparator(separator)) {
+      normalized.push(...tableLines)
+      continue
+    }
+
+    tableLines.slice(2).forEach((row, rowIndex) => {
+      const cells = markdownTableCells(row)
+      const details = header
+        .map((label, cellIndex) => {
+          const value = String(cells[cellIndex] || '')
+            .replace(/<br\s*\/?\s*>/gi, '；')
+            .replace(/&nbsp;/gi, ' ')
+            .trim()
+          return value ? `${label}：${value}` : ''
+        })
+        .filter(Boolean)
+      if (details.length) normalized.push(`${rowIndex + 1}. ${details.join('；')}`)
+    })
+  }
+
+  return normalized.join('\n')
+}
+
 function normalizeLegacyAiMarkdown(summary) {
   let listIndex = 0
-  const lines = summary.split('\n').reduce((result, rawLine) => {
-    const line = rawLine.trim()
+  const lines = normalizeMarkdownTables(summary).split('\n').reduce((result, rawLine) => {
+    const line = rawLine
+      .replace(/<br\s*\/?\s*>/gi, '；')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/^\s*>\s?/, '')
+      .replace(/[🔴🟡🟣🔵✅❌⚠️💡📌]/gu, '')
+      .replace(/([：；])\s+/g, '$1')
+      .replace(/\s*[（(][A-Za-z][A-Za-z\s/-]*[）)]\s*$/, '')
+      .trim()
 
     if (/^(?:-{3,}|_{3,}|\*{3,})$/.test(line)) {
       return result

@@ -131,3 +131,36 @@ test('normalizes legacy AI Markdown minutes into plain text', () => {
   ].join('\n'))
   assert.doesNotMatch(summary, /\*\*|##|---|\[ \]|^\s*[-*]\s/m)
 })
+
+test('normalizes HTML breaks and Markdown tables from AI minutes', () => {
+  const summary = normalizeMeetingSummary([
+    '3. 待办事项清单 (Action Items)',
+    '',
+    '> 注意：原记录中负责人和截止时间多为“未明确”。',
+    '',
+    '| 优先级 | 任务描述 | 关键产出/目标 | 状态 |',
+    '|:---|:---|:---|:---|',
+    '| 🔴 高 | 智能表格工具验证<br>查看并演示分组功能 | 确认是否满足业务需求 | 🟡 进行中 |',
+    '| 🟡 低 | 管理解释工作 | 明确相关事宜 | 🟣 待定 |',
+    '',
+    '4. 风险预警与应对策略 (Risk Management)',
+    '',
+    '🔴 高风险项',
+    '1. 数据失真风险：若允许链接转发，将失去考察意义。'
+  ].join('\n'))
+
+  assert.equal(summary, [
+    '3. 待办事项清单',
+    '',
+    '注意：原记录中负责人和截止时间多为“未明确”。',
+    '',
+    '1. 优先级：高；任务描述：智能表格工具验证；查看并演示分组功能；关键产出/目标：确认是否满足业务需求；状态：进行中',
+    '2. 优先级：低；任务描述：管理解释工作；关键产出/目标：明确相关事宜；状态：待定',
+    '',
+    '4. 风险预警与应对策略',
+    '',
+    '高风险项',
+    '1. 数据失真风险：若允许链接转发，将失去考察意义。'
+  ].join('\n'))
+  assert.doesNotMatch(summary, /<br\s*\/?\s*>|\||^>\s|\(Action Items\)|\(Risk Management\)|🔴|🟡|🟣/m)
+})

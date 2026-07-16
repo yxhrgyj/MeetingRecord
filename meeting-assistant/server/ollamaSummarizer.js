@@ -1,6 +1,7 @@
 const DEFAULT_OLLAMA_BASE_URL = 'http://127.0.0.1:11434'
 const DEFAULT_OLLAMA_MODEL = 'qwen3.5:9b'
 const DEFAULT_OLLAMA_KEEP_ALIVE = '0s'
+const PLAIN_TEXT_FORMAT_RULES = '仅使用中文标题和阿拉伯数字序号；标题不加序号、英文括号或图标。不得输出 HTML、XML 或任何标签；不得使用表格、引用符号、图标或表情。'
 
 export function buildSummarizerOptions(env = {}) {
   const options = {
@@ -20,6 +21,7 @@ export function buildMeetingSummaryPrompt(content) {
     '你是严谨的中文会议纪要助手。请只根据下面的会议转写原文整理纪要，不要编造没有出现的信息。',
     '如果某一项在原文中没有明确提到，请写“未明确”。保留关键金额、日期、人员、系统名称和任务归属。',
     '请输出纯文本，不得使用 Markdown 语法：不要使用 #、*、-、---、反引号或复选框。',
+    PLAIN_TEXT_FORMAT_RULES,
     '结构固定为：',
     '',
     '讨论事项',
@@ -49,6 +51,7 @@ export function buildStageSummaryPrompt(content, { index = 0, total = 1 } = {}) 
     `你是严谨的中文会议阶段摘要助手。下面是第 ${Number(index) + 1}/${Number(total)} 个阶段的转写原文。`,
     '只能依据当前阶段原文，不得补造没有出现的信息；没有明确依据时写“未明确”。',
     '请输出纯文本，不得使用 Markdown 语法：不要使用 #、*、-、---、反引号或复选框。',
+    PLAIN_TEXT_FORMAT_RULES,
     '固定包含以下四个部分：',
     '',
     '讨论事项',
@@ -83,6 +86,7 @@ export function buildFinalSummaryPrompt(summaries = []) {
     '保留金额、日期、负责人、截止时间、系统名称和任务归属；没有依据时写“未明确”。',
     '输出完整纯文本会议纪要，目标长度约 1500-3000 字，内容完整性优先于机械凑字数。',
     '不得使用 Markdown 语法：不要使用 #、*、-、---、反引号或复选框。',
+    PLAIN_TEXT_FORMAT_RULES,
     '',
     '讨论事项',
     '1. ...',
